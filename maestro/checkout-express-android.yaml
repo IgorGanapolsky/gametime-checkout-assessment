@@ -1,0 +1,53 @@
+appId: host.exp.exponent
+name: Google Pay cancel then one-interaction success
+---
+- openLink: exp://127.0.0.1:8082
+- extendedWaitUntil:
+    visible:
+      id: checkout-screen
+    timeout: 60000
+- tapOn:
+    id: review-lab-open
+- scrollUntilVisible:
+    element:
+      id: review-lab-reset
+    direction: DOWN
+- tapOn:
+    id: review-lab-reset
+- scrollUntilVisible:
+    element:
+      id: review-lab-platform-android
+    direction: UP
+- tapOn:
+    id: review-lab-platform-android
+- tapOn:
+    id: review-lab-google-pay
+- tapOn:
+    id: review-lab-close
+- tapOn:
+    id: express-google-pay
+- assertVisible: "WALLET SHEET STUB"
+- tapOn:
+    id: express-sheet-cancel
+- extendedWaitUntil:
+    visible: "Cancelled"
+    timeout: 10000
+- assertVisible:
+    id: payment-status-message
+    text: "Wallet / Affirm cancelled. Nothing was charged."
+- tapOn:
+    id: payment-status-retry
+- tapOn:
+    id: express-google-pay
+- assertVisible: "WALLET SHEET STUB"
+- tapOn:
+    id: express-sheet-pay
+- extendedWaitUntil:
+    visible: "Order confirmed"
+    timeout: 15000
+- assertVisible:
+    id: payment-ledger-count
+    text: "1"
+- assertNotVisible: "Cannot connect to Expo CLI"
+- assertNotVisible: "Uncaught.*promise"
+- takeScreenshot: checkout-express-android

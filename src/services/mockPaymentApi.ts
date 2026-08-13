@@ -7,6 +7,8 @@ import {
 interface LedgerRecord {
   fingerprint: string;
   response: PaymentResponse;
+  request?: PaymentRequest;
+  settleAtMs?: number;
 }
 
 function requestFingerprint(request: PaymentRequest): string {
@@ -28,6 +30,8 @@ function cloneResponse(record: LedgerRecord, replay: boolean): PaymentResponse {
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+const SLOW_NETWORK_DELAY_MS = 8000;
 
 /**
  * Mock payment API with a real request/response boundary.
@@ -82,11 +86,17 @@ export class MockPaymentBackend {
         };
         return JSON.parse(JSON.stringify(conflict)) as PaymentResponse;
       }
-      if (existing.response.status !== 'processing') {
-        return JSON.parse(JSON.stringify(cloneResponse(existing, true))) as PaymentResponse;
-      }
+      await this.settleIfReady(request.idempotencyKey, existing);
+      return JSON.parse(
+        JSON.stringify(cloneResponse(existing, true))
+      ) as PaymentResponse;
     }
 
+    // Review Lab's slow path must remain processing long enough for a real
+    // device runner to read the key and issue an OS force-stop mid-request.
+    const waitMs = request.simulateSlowNetwork
+      ? SLOW_NETWORK_DELAY_MS
+      : this.latencyMs;
     const processing: PaymentResponse = {
       success: false,
       status: 'processing',
@@ -96,18 +106,14 @@ export class MockPaymentBackend {
     this.ledger.set(request.idempotencyKey, {
       fingerprint: requestFingerprint(request),
       response: processing,
+      request,
+      settleAtMs: Date.now() + waitMs,
     });
     if (this.onLedgerChange) {
       await this.onLedgerChange();
     }
 
-    const waitMs = request.simulateSlowNetwork ? 2500 : this.latencyMs;
     await delay(waitMs);
-
-    if (request.simulateFailureMode === 'network_error') {
-      // Leave the processing row. Recovery must poll, not invent a new key.
-      throw new Error('NETWORK_TIMEOUT: payment API unreachable (HTTP 504).');
-    }
 
     const terminal = this.decide(request);
     this.ledger.set(request.idempotencyKey, {
@@ -117,12 +123,21 @@ export class MockPaymentBackend {
     if (this.onLedgerChange) {
       await this.onLedgerChange();
     }
+
+    if (request.simulateFailureMode === 'network_error') {
+      // The mock API accepted and settled the charge, but its response was
+      // lost. The client must reconcile the same key with a GET.
+      throw new Error('NETWORK_TIMEOUT: payment API unreachable (HTTP 504).');
+    }
     return JSON.parse(JSON.stringify(terminal)) as PaymentResponse;
   }
 
   async queryPaymentStatus(idempotencyKey: string): Promise<PaymentResponse | null> {
     await delay(this.queryLatencyMs);
     const record = this.ledger.get(idempotencyKey);
+    if (record) {
+      await this.settleIfReady(idempotencyKey, record);
+    }
     return record
       ? (JSON.parse(JSON.stringify(record.response)) as PaymentResponse)
       : null;
@@ -130,6 +145,26 @@ export class MockPaymentBackend {
 
   clearLedger(): void {
     this.ledger.clear();
+  }
+
+  private async settleIfReady(
+    idempotencyKey: string,
+    record: LedgerRecord
+  ): Promise<void> {
+    if (
+      record.response.status !== 'processing' ||
+      !record.request ||
+      record.settleAtMs === undefined ||
+      Date.now() < record.settleAtMs
+    ) {
+      return;
+    }
+
+    record.response = this.decide(record.request);
+    this.ledger.set(idempotencyKey, record);
+    if (this.onLedgerChange) {
+      await this.onLedgerChange();
+    }
   }
 
   private assertRequest(request: PaymentRequest): void {

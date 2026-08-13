@@ -4,14 +4,15 @@ React Native (Expo) checkout for the Staff Mobile Engineer take-home.
 
 A fan has already picked seats. This screen decides **which payment methods they are allowed to see**, makes **express pay actually express**, keeps **card entry honest**, and talks to a **mock payment API** whose contract is designed so a kill/relaunch cannot double-charge.
 
-## Physical-device preview
+## Physical-device proof
 
 <p align="center">
-  <img src="evidence/native-device-checkout.png" alt="Gametime checkout running on a physical Samsung Galaxy S25" width="320" />
-  <img src="evidence/real-device-s25-checkout.png" alt="Gametime express and card checkout on a physical Android device" width="320" />
+  <img src="evidence/affirm-eligibility.png" alt="Affirm appearing after the physical-device cart crosses 100 dollars" width="30%" />
+  <img src="evidence/card-success.png" alt="Card payment confirmed on a physical Samsung device with one ledger row" width="30%" />
+  <img src="evidence/google-pay-success.png" alt="Google Pay stub payment confirmed on a physical Samsung device" width="30%" />
 </p>
 
-Both screenshots are from the standalone Android build running on a physical Samsung Galaxy S25. The device flow exposes Google Pay, keeps Affirm hidden below $100, and provides the Review Lab for deterministic eligibility and failure-path review.
+Verified on **2026-08-13 (Thursday, America/New_York)** with a physical Samsung Galaxy S25 (`SM-S931U1`, Android 16). The serialized Maestro suite passed all five flows in 4m23s: Affirm threshold, card success, issuer decline/retry, Google Pay cancel/success, and force-stop/relaunch recovery with the same idempotency key and one ledger row. The post-rebase acceptance gate also passed **9/9 Jest suites (80/80 tests)**, TypeScript, ESLint, Expo dependency pins, and `git diff --check`.
 
 Deadline context: assignment email received **2026-08-12 (Wednesday)**; submit by **2026-08-17**.
 
@@ -21,7 +22,7 @@ Deadline context: assignment email received **2026-08-12 (Wednesday)**; submit b
 - Pure eligibility engine (`src/services/eligibilityEngine.ts`).
 - Card validation: formatting, brand, Luhn, future expiry, CVC length (`src/services/cardValidator.ts`).
 - Wallet / Affirm **stubs** that mimic a native sheet and a redirect — tap completes in that flow. No second Submit.
-- In-process mock API with a JSON request/response boundary, idempotency, processing-before-wait, and GET-by-key reconciliation (`src/services/mockPaymentApi.ts`).
+- Mock API with a JSON request/response boundary, idempotency, a durable settlement record written before the wait, and GET-by-key reconciliation (`src/services/mockPaymentApi.ts`).
 - AppState + persisted session + persisted ledger so background and kill/relaunch resume the **same** attempt.
 
 Visual polish was deliberately second to eligibility, lifecycle, and form UX.
@@ -31,9 +32,9 @@ Visual polish was deliberately second to eligibility, lifecycle, and form UX.
 Requires Node 20+.
 
 ```bash
-npm install
-npm test
-npx expo start
+npm ci
+npm run test:acceptance
+npx expo start --localhost
 ```
 
 Then:
@@ -42,7 +43,7 @@ Then:
 - Android emulator: `a`
 - Expo Go on a device: scan the QR (same LAN)
 
-**Tested:** Node 22 on macOS, Expo SDK 57, and a standalone debug build on a physical Samsung Galaxy S25 (`SM-S931U1`). The final gate is 61/61 Jest tests, clean ESLint, clean TypeScript, successful Android export, and a passing Google Pay express flow on the physical device. No real payment credentials are used.
+No paid Apple Developer account or real Apple Pay / Google Pay / Affirm credentials are required.
 
 On first launch in the iOS Simulator you should **not** see Apple Pay. That is the honest default: simulators do not have a provisioned Wallet card. Open **REVIEW LAB** (bottom right) → platform `iOS` → cycle **Apple Pay provisioned** to `true`.
 
@@ -58,7 +59,7 @@ On first launch in the iOS Simulator you should **not** see Apple Pay. That is t
 Detection default (`src/services/deviceCapabilities.ts`):
 
 - Platform from `Platform.OS`.
-- Wallet capability is **false on simulators / Expo Go** and true only on a real device of that OS. A production build would swap the stub for `PKPaymentAuthorizationController.canMakePaymentsUsingNetworks` / `PaymentsClient.isReadyToPay`. The stub has the same shape: capability check → (sheet \| redirect) → authorization token.
+- Wallet capability fails closed on every device until the native adapter is implemented. A production build would call `PKPaymentAuthorizationController.canMakePaymentsUsingNetworks` / `PaymentsClient.isReadyToPay`. Review Lab provides explicit test overrides; it never claims that the physical device is provisioned.
 
 Review Lab can force platform and wallet independently so one device can exercise every branch.
 
@@ -88,14 +89,14 @@ Why this shape:
 - **Integer cents** — ticket + fee math never uses floats.
 - **Token, never PAN** — `tokenizeCard` maps `4242…4242` → `tok_visa_4242` and `4000…0002` → `tok_visa_declined`.
 - **Idempotency is the anti-double-charge primitive.** Same key + same fingerprint replays the original row. Same key + different amount/method/token is HTTP 409.
-- **`processing` is written before the simulated network wait.** If the app is killed mid-request, relaunch finds a row instead of inventing a new key.
-- In-process transport is enough to defend the contract. Swapping `MockPaymentBackend` for `fetch` is a one-file change; the checkout already treats the boundary as JSON.
+- **`processing`, the request fingerprint, and the settlement deadline are written before the simulated network wait.** If the app is killed mid-request, a new backend instance can settle and reconcile that row instead of inventing a new key.
+- The transport is local, but the process-death contract is explicit: AsyncStorage survives the app process, while `MockPaymentBackend` can be reconstructed from the durable ledger. Swapping it for `fetch` preserves the client contract.
 
 Failure paths the UI handles:
 
 - Issuer decline (`4000 0000 0000 0002` or Review Lab → Issuer decline)
 - Wallet / Affirm cancel (sheet Cancel — **no charge**)
-- 504 mid-request (Review Lab → 504; UI goes to **we're checking**, then GET)
+- Lost 504 response after the mock accepted the charge (Review Lab → 504; UI GETs the same key)
 
 ## State flow
 
@@ -114,7 +115,7 @@ Kill + relaunch: hydrate the ledger, load the session, GET the key.
 
 - captured → success (do not charge again)
 - declined → show decline, new attempt needs a **new** key
-- processing → stay on “we don’t know yet”
+- processing → poll the same key until the mock settlement deadline; never POST again
 - missing → the POST never landed; a new attempt is safe
 
 A local in-flight request is not overwritten by AppState recovery (that race is how you double-charge).
@@ -128,7 +129,7 @@ A local in-flight request is not overwritten by AppState recovery (that race is 
 
 ## Tradeoffs
 
-- In-process API instead of a separate Express process so Expo Go on a phone does not need `localhost` routing.
+- Durable local mock API instead of a separate Express process; Expo Go still exercises the request/response, idempotency, loss, and reconciliation contracts.
 - Wallet / Affirm are stubs with the real interaction shape, not sandbox SDKs (per the brief).
 - Context + hooks instead of XState — the state machine is small enough to read in one file.
 - Ledger persistence is AsyncStorage, not SQLite. Fine for one in-flight checkout.
@@ -136,7 +137,7 @@ A local in-flight request is not overwritten by AppState recovery (that race is 
 ## What I would do with more time
 
 - Hosted mock (`msw` or a tiny Fastify) plus a recorded OpenAPI file.
-- Detox: background during sheet, kill during `processing`, assert a single `transactionId`.
+- Replace the wallet stubs with the native Apple Pay / Google Pay readiness adapters and sandbox sheets.
 - 3-D Secure / step-up as a second redirect state.
 - SecureStore for the session, and a server-side unique constraint demo.
 - Accessibility pass (Dynamic Type, VoiceOver on the wallet buttons).
@@ -149,12 +150,14 @@ See [AI_USAGE.md](./AI_USAGE.md). Gametime asked for where/why AI was used and h
 
 ```bash
 npm test          # Jest: domain + CheckoutController e2e + testID contract
-npm run test:e2e  # controller + instrumentation only
+npm run test:e2e  # controller integration + instrumentation contract
+npm run test:maestro   # five real-device flows; Metro uses localhost:8082
+npm run test:acceptance # 80 Jest tests + TypeScript + lint + Expo version pins
 ```
 
 TDD: `cart.test.ts` and `checkoutController.e2e.test.ts` were written first (they failed on missing modules), then `CheckoutController` / `cart` / `MemoryKv` were implemented until green.
 
-The controller suite is the fail-closed **full e2e of payment state** (no RN renderer):
+The controller suite is a fail-closed integration test of payment state (it does not render React Native):
 
 - hide Apple Pay without Wallet; card still charges
 - express is one interaction (sheet confirm charges; cancel writes no ledger row)
@@ -162,9 +165,7 @@ The controller suite is the fail-closed **full e2e of payment state** (no RN ren
 - qty locked in flight
 - decline token then new key succeeds
 - kill mid-`processing` + rehydrate GET-replays one ledger row
-- 504 stays on the same idempotency key
+- 504 reconciles the accepted charge on the same idempotency key
 - incomplete card never hits the API
 
-Device instrumentation: `maestro/` (testIDs from `src/testing/testIds.ts`). See `maestro/README.md`. Maestro on a booted sim is complementary; Jest controller e2e is the gate.
-
-Physical-device screenshots are checked in under `evidence/`. Local Maestro receipts are intentionally ignored because they contain machine-specific paths; the reproducible flows live in `.maestro/`.
+Physical-device instrumentation lives in `maestro/` and uses stable selectors from `src/testing/testIds.ts`. The five-flow suite covers Affirm threshold, card success, decline/retry, Google Pay cancel/success, and force-stop/relaunch with the same key and one ledger row. See `maestro/README.md` for the reproducible evidence command.

@@ -92,7 +92,7 @@ export class CheckoutController {
   }
 
   async beginExpress(method: Exclude<PaymentMethodId, 'credit_card'>): Promise<void> {
-    if (!RESETTABLE.includes(this.status)) return;
+    if (this.inFlight || !RESETTABLE.includes(this.status)) return;
     const eligibility = evaluateEligibility(this.device, this.cart.totalCents, this.override);
     const allowed =
       (method === 'apple_pay' && eligibility.applePayAvailable) ||
@@ -100,6 +100,7 @@ export class CheckoutController {
       (method === 'affirm' && eligibility.affirmAvailable);
     if (!allowed) return;
 
+    this.inFlight = true;
     const key = this.nextIdempotencyKey();
     const attempt: PersistentPaymentState = {
       idempotencyKey: key,
@@ -131,6 +132,7 @@ export class CheckoutController {
   }
 
   async cancelSheet(): Promise<void> {
+    this.inFlight = false;
     this.expressSheet = null;
     this.status = 'cancelled';
     this.statusMessage = 'Wallet / Affirm cancelled. Nothing was charged.';
@@ -145,7 +147,8 @@ export class CheckoutController {
       this.cardInputs.expiry,
       this.cardInputs.cvc
     );
-    if (!card.isComplete) return;
+    if (this.inFlight || !RESETTABLE.includes(this.status) || !card.isComplete) return;
+    this.inFlight = true;
     const key = this.nextIdempotencyKey();
     const attempt: PersistentPaymentState = {
       idempotencyKey: key,
@@ -165,6 +168,7 @@ export class CheckoutController {
   async reset(): Promise<void> {
     this.inFlight = false;
     this.attempt = null;
+    this.cart = cartFromQuantity(1);
     this.status = 'idle';
     this.statusMessage = null;
     this.activeIdempotencyKey = null;

@@ -32,10 +32,12 @@
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.2",
+    "@types/react-test-renderer": "^19.1.0",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.1",
-    "jest": "^30.4.2",
+    "jest": "~29.7.0",
     "jest-expo": "^57.0.4",
+    "react-test-renderer": "^19.2.3",
     "ts-jest": "^29.4.12",
     "typescript": "~6.0.3"
   },
@@ -48,7 +50,8 @@
     "lint": "expo lint",
     "test": "jest",
     "test:e2e": "jest src/__tests__/checkoutController.e2e.test.ts src/__tests__/e2eInstrumentation.test.ts src/__tests__/testIds.instrumentation.test.ts",
-    "test:maestro": "maestro test maestro/checkout-affirm-eligibility.yaml maestro/checkout-card-success.yaml"
+    "test:maestro": "maestro test maestro/config.yaml",
+    "test:acceptance": "npm test -- --runInBand --no-cache && tsc --noEmit && expo lint && expo install --check"
   },
   "private": true
 }

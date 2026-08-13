@@ -17,17 +17,18 @@ function platformFromOs(): PlatformType {
  *   - iOS: PKPaymentAuthorizationController.canMakePaymentsUsingNetworks
  *   - Android: PaymentsClient.isReadyToPay
  *
- * Simulators and Expo Go almost never have a provisioned wallet, so the
- * honest default is false unless we are on a real device. The Review Lab
- * can force either state without four phones.
+ * Until those native adapters are implemented, the honest production
+ * capability is false even on a physical phone. The Review Lab can force a
+ * capability for deterministic reviewer flows without claiming a wallet is
+ * actually provisioned.
  */
 export function detectDeviceCapabilities(): DeviceCapabilities {
   const platform = platformFromOs();
-  const onRealDevice = Device.isDevice === true;
+  void Device.isDevice;
 
   return {
     platform,
-    hasApplePayCardProvisioned: platform === 'ios' && onRealDevice,
-    hasGooglePaySetup: platform === 'android' && onRealDevice,
+    hasApplePayCardProvisioned: false,
+    hasGooglePaySetup: false,
   };
 }

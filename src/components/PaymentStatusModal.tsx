@@ -16,6 +16,7 @@ export const PaymentStatusModal: React.FC = () => {
     statusMessage,
     activeIdempotencyKey,
     lastResponse,
+    ledgerCount,
     resetCheckout,
     isRecoveringFromInterruption,
     expressSheet,
@@ -46,17 +47,26 @@ export const PaymentStatusModal: React.FC = () => {
           {isProcessing && (
             <>
               <ActivityIndicator size="large" color="#38BDF8" style={styles.spinner} />
-              <Text style={styles.title}>
+              <Text style={styles.title} testID={TEST_IDS.statusTitle}>
                 {status === 'reconciling' ? "We're checking" : 'Processing'}
               </Text>
-              <Text style={styles.message}>
+              <Text style={styles.message} testID={TEST_IDS.statusMessage}>
                 {statusMessage || 'Talking to the payment API…'}
               </Text>
               {activeIdempotencyKey ? (
-                <Text style={styles.idempotencyTag}>
-                  idempotency {activeIdempotencyKey}
+                <Text
+                  style={styles.idempotencyTag}
+                  testID={TEST_IDS.statusIdempotencyKey}
+                >
+                  {activeIdempotencyKey}
                 </Text>
               ) : null}
+              <Text
+                style={styles.idempotencyTag}
+                testID={TEST_IDS.statusLedgerCount}
+              >
+                {ledgerCount}
+              </Text>
             </>
           )}
 
@@ -68,15 +78,32 @@ export const PaymentStatusModal: React.FC = () => {
               <Text style={styles.titleSuccess} testID={TEST_IDS.statusTitle}>
                 Order confirmed
               </Text>
-              <Text style={styles.message}>
+              <Text style={styles.message} testID={TEST_IDS.statusMessage}>
                 {statusMessage || 'Tickets issued.'}
               </Text>
               {lastResponse ? (
                 <View style={styles.receiptBox}>
                   <Text style={styles.receiptTitle}>API RECEIPT</Text>
-                  <Text style={styles.receiptRow}>id {lastResponse.transactionId}</Text>
-                  <Text style={styles.receiptRow}>
-                    replay {lastResponse.wasIdempotentReplay ? 'yes' : 'no'}
+                  <Text
+                    style={styles.receiptRow}
+                    testID={TEST_IDS.statusTransactionId}
+                  >
+                    {lastResponse.transactionId}
+                  </Text>
+                  <Text
+                    style={styles.receiptRow}
+                    testID={TEST_IDS.statusIdempotencyKey}
+                  >
+                    {activeIdempotencyKey}
+                  </Text>
+                  <Text style={styles.receiptRow} testID={TEST_IDS.statusReplay}>
+                    {lastResponse.wasIdempotentReplay ? 'yes' : 'no'}
+                  </Text>
+                  <Text
+                    style={styles.receiptRow}
+                    testID={TEST_IDS.statusLedgerCount}
+                  >
+                    {ledgerCount}
                   </Text>
                 </View>
               ) : null}
@@ -93,10 +120,14 @@ export const PaymentStatusModal: React.FC = () => {
           {isCancelled && (
             <>
               <Text style={styles.title}>Cancelled</Text>
-              <Text style={styles.message}>
+              <Text style={styles.message} testID={TEST_IDS.statusMessage}>
                 {statusMessage || 'Nothing was charged.'}
               </Text>
-              <TouchableOpacity style={styles.retryBtn} onPress={resetCheckout}>
+              <TouchableOpacity
+                testID={TEST_IDS.statusRetry}
+                style={styles.retryBtn}
+                onPress={resetCheckout}
+              >
                 <Text style={styles.retryBtnText}>Back to checkout</Text>
               </TouchableOpacity>
             </>
@@ -108,10 +139,14 @@ export const PaymentStatusModal: React.FC = () => {
                 <Text style={styles.iconText}>✕</Text>
               </View>
               <Text style={styles.titleError}>Payment failed</Text>
-              <Text style={styles.message}>
+              <Text style={styles.message} testID={TEST_IDS.statusMessage}>
                 {statusMessage || 'The charge did not go through.'}
               </Text>
-              <TouchableOpacity style={styles.retryBtn} onPress={resetCheckout}>
+              <TouchableOpacity
+                testID={TEST_IDS.statusRetry}
+                style={styles.retryBtn}
+                onPress={resetCheckout}
+              >
                 <Text style={styles.retryBtnText}>Try a different method</Text>
               </TouchableOpacity>
             </>

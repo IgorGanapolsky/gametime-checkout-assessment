@@ -12,8 +12,14 @@ import { dollarsFromCents } from '../types/checkout';
 import { TEST_IDS } from '../testing/testIds';
 
 export const CreditCardForm: React.FC = () => {
-  const { cart, cardData, updateCardDetails, processCardPayment, status } =
-    useCheckout();
+  const {
+    cart,
+    cardData,
+    cardInputs,
+    updateCardDetails,
+    processCardPayment,
+    status,
+  } = useCheckout();
 
   const [touched, setTouched] = useState({
     number: false,
@@ -21,15 +27,14 @@ export const CreditCardForm: React.FC = () => {
     cvc: false,
   });
 
-  const [rawNumber, setRawNumber] = useState('');
-  const [rawExpiry, setRawExpiry] = useState('');
-  const [rawCvc, setRawCvc] = useState('');
+  const rawNumber = cardInputs.number;
+  const rawExpiry = cardInputs.expiry;
+  const rawCvc = cardInputs.cvc;
 
   const busy = status !== 'idle' && status !== 'cancelled' && status !== 'declined' && status !== 'failed';
 
   const handleNumberChange = (text: string) => {
     const digits = text.replace(/\D/g, '');
-    setRawNumber(digits);
     updateCardDetails(digits, rawExpiry, rawCvc);
   };
 
@@ -37,13 +42,11 @@ export const CreditCardForm: React.FC = () => {
     const digits = text.replace(/\D/g, '').slice(0, 4);
     const formatted =
       digits.length >= 3 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
-    setRawExpiry(formatted);
     updateCardDetails(rawNumber, formatted, rawCvc);
   };
 
   const handleCvcChange = (text: string) => {
     const digits = text.replace(/\D/g, '').slice(0, 4);
-    setRawCvc(digits);
     updateCardDetails(rawNumber, rawExpiry, digits);
   };
 

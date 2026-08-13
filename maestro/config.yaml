@@ -1,4 +1,16 @@
 appId: host.exp.exponent
-flows:
-  - checkout-affirm-eligibility.yaml
-  - checkout-card-success.yaml
+name: Gametime full physical-device acceptance suite
+---
+- openLink: exp://127.0.0.1:8082
+- tapOn:
+    id: payment-status-done
+    optional: true
+- runFlow: checkout-affirm-eligibility.yaml
+- runFlow: checkout-card-success.yaml
+- tapOn:
+    id: payment-status-done
+- runFlow: checkout-card-decline.yaml
+- runFlow: checkout-express-android.yaml
+- tapOn:
+    id: payment-status-done
+- runFlow: checkout-cold-relaunch.yaml

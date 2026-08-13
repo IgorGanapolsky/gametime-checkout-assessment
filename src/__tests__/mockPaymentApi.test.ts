@@ -20,6 +20,10 @@ describe('mock payment API contract', () => {
     api = new MockPaymentBackend();
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('captures a fresh charge and returns a stable transaction id', async () => {
     const res = await api.processPayment(base({ paymentMethod: 'apple_pay', paymentMethodToken: 'tok_express_apple_pay' }));
     expect(res.success).toBe(true);
@@ -50,7 +54,7 @@ describe('mock payment API contract', () => {
     expect(res.declineCode).toBe('card_declined');
   });
 
-  it('writes a processing row before a network timeout so recovery can poll', async () => {
+  it('settles an accepted charge before simulating a lost 504 response', async () => {
     await expect(
       api.processPayment(
         base({
@@ -60,8 +64,10 @@ describe('mock payment API contract', () => {
       )
     ).rejects.toThrow(/NETWORK_TIMEOUT/);
 
-    const mid = await api.queryPaymentStatus('idem_timeout');
-    expect(mid?.status).toBe('processing');
+    const recovered = await api.queryPaymentStatus('idem_timeout');
+    expect(recovered?.status).toBe('captured');
+    expect(recovered?.idempotencyKey).toBe('idem_timeout');
+    expect(api.exportLedger()).toHaveLength(1);
   });
 
   it('lets recovery query a captured payment by idempotency key', async () => {
@@ -69,5 +75,23 @@ describe('mock payment API contract', () => {
     const queried = await api.queryPaymentStatus('idem_query');
     expect(queried?.success).toBe(true);
     expect(queried?.status).toBe('captured');
+  });
+
+  it('keeps the explicit slow-network request processing long enough for a device kill', async () => {
+    jest.useFakeTimers();
+    const startedAt = Date.now();
+    const pending = api.processPayment(
+      base({ idempotencyKey: 'idem_device_kill', simulateSlowNetwork: true })
+    );
+    const durableRow = api.exportLedger()[0].record;
+
+    expect(durableRow.response.status).toBe('processing');
+    expect(durableRow.settleAtMs).toBeGreaterThanOrEqual(startedAt + 6000);
+
+    await jest.advanceTimersByTimeAsync(8000);
+    await expect(pending).resolves.toMatchObject({
+      status: 'captured',
+      idempotencyKey: 'idem_device_kill',
+    });
   });
 });

@@ -5,7 +5,11 @@
  */
 import { MemoryKv } from '../services/memoryKv';
 import { MockPaymentBackend } from '../services/mockPaymentApi';
-import { CheckoutController } from '../services/checkoutController';
+import {
+  CheckoutController,
+  LEDGER_KEY,
+  SESSION_KEY,
+} from '../services/checkoutController';
 import { evaluateEligibility } from '../services/eligibilityEngine';
 
 function makeController(
@@ -112,6 +116,17 @@ describe('CheckoutController e2e instrumentation', () => {
     expect(controller.snapshot().cart.items[0].quantity).toBe(qty);
   });
 
+  it('reset restores the one-ticket cart and hides Affirm again', async () => {
+    const { controller } = makeController({ platform: 'android' });
+    controller.setQuantity(2);
+    expect(controller.snapshot().eligibility.affirmAvailable).toBe(true);
+
+    await controller.reset();
+
+    expect(controller.snapshot().cart.items[0].quantity).toBe(1);
+    expect(controller.snapshot().eligibility.affirmAvailable).toBe(false);
+  });
+
   it('declines tok_visa_declined and allows a new attempt with a new key', async () => {
     const { controller, api } = makeController({ keys: ['idem_d1', 'idem_d2'] });
     controller.updateCard('4000000000000002', '12/28', '123');
@@ -124,6 +139,40 @@ describe('CheckoutController e2e instrumentation', () => {
     await controller.payCard();
     expect(controller.snapshot().status).toBe('succeeded');
     expect((await api.queryPaymentStatus('idem_d2'))?.success).toBe(true);
+  });
+
+  it('coalesces concurrent card taps into one idempotency key and one API row', async () => {
+    const api = new MockPaymentBackend({ latencyMs: 30 });
+    const kv = new MemoryKv();
+    const nextIdempotencyKey = jest
+      .fn<string, []>()
+      .mockReturnValueOnce('idem_single')
+      .mockReturnValue('idem_duplicate');
+    const controller = new CheckoutController({
+      api,
+      kv,
+      now: () => '2026-08-13T20:10:00.000Z',
+      nextIdempotencyKey,
+      device: {
+        platform: 'android',
+        hasApplePayCardProvisioned: false,
+        hasGooglePaySetup: false,
+      },
+      override: {
+        forcePlatform: 'auto',
+        forceApplePayProvisioned: 'device',
+        forceGooglePaySetup: 'device',
+        forceFailureMode: 'none',
+        simulateSlowNetwork: false,
+      },
+    });
+
+    controller.updateCard('4242424242424242', '12/28', '123');
+    await Promise.all([controller.payCard(), controller.payCard()]);
+
+    expect(nextIdempotencyKey).toHaveBeenCalledTimes(1);
+    expect(api.exportLedger()).toHaveLength(1);
+    expect(controller.snapshot().activeIdempotencyKey).toBe('idem_single');
   });
 
   it('kill mid-flight then relaunch GET-replays the same key (no double charge)', async () => {
@@ -194,16 +243,84 @@ describe('CheckoutController e2e instrumentation', () => {
     expect(api.exportLedger()).toHaveLength(1);
   });
 
-  it('504 leaves a processing row; recover does not mint a new key', async () => {
+  it('cold process restart settles a durable processing row without the old backend', async () => {
+    const firstApi = new MockPaymentBackend({ latencyMs: 45 });
+    const firstKv = new MemoryKv();
+    const first = new CheckoutController({
+      api: firstApi,
+      kv: firstKv,
+      now: () => '2026-08-13T20:10:00.000Z',
+      nextIdempotencyKey: () => 'idem_cold_restart',
+      device: {
+        platform: 'android',
+        hasApplePayCardProvisioned: false,
+        hasGooglePaySetup: false,
+      },
+      override: {
+        forcePlatform: 'auto',
+        forceApplePayProvisioned: 'device',
+        forceGooglePaySetup: 'device',
+        forceFailureMode: 'none',
+        simulateSlowNetwork: false,
+      },
+    });
+
+    first.updateCard('4242424242424242', '12/28', '123');
+    const abandonedProcess = first.payCard();
+    let persistedLedger = await firstKv.get(LEDGER_KEY);
+    for (let i = 0; i < 20 && !persistedLedger; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      persistedLedger = await firstKv.get(LEDGER_KEY);
+    }
+    expect(persistedLedger).toContain('processing');
+
+    // Copy only durable storage into a new process. The original backend and
+    // controller are deliberately not shared with the relaunched instance.
+    const relaunchedKv = new MemoryKv();
+    await relaunchedKv.set(SESSION_KEY, (await firstKv.get(SESSION_KEY))!);
+    await relaunchedKv.set(LEDGER_KEY, persistedLedger!);
+    const relaunchedApi = new MockPaymentBackend();
+    const relaunched = CheckoutController.rehydrate({
+      api: relaunchedApi,
+      kv: relaunchedKv,
+      now: () => '2026-08-13T20:11:00.000Z',
+      nextIdempotencyKey: () => 'idem_must_not_be_used',
+      device: {
+        platform: 'android',
+        hasApplePayCardProvisioned: false,
+        hasGooglePaySetup: false,
+      },
+      override: {
+        forcePlatform: 'auto',
+        forceApplePayProvisioned: 'device',
+        forceGooglePaySetup: 'device',
+        forceFailureMode: 'none',
+        simulateSlowNetwork: false,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await relaunched.recover();
+
+    expect(relaunched.snapshot().status).toBe('succeeded');
+    expect(relaunched.snapshot().activeIdempotencyKey).toBe('idem_cold_restart');
+    expect(relaunched.snapshot().lastResponse?.idempotencyKey).toBe(
+      'idem_cold_restart'
+    );
+    expect(relaunchedApi.exportLedger()).toHaveLength(1);
+    await abandonedProcess;
+  });
+
+  it('504 lost response reconciles the accepted charge without minting a new key', async () => {
     const { controller, api } = makeController({
       failure: 'network_error',
       keys: ['idem_504'],
     });
     controller.updateCard('4242424242424242', '12/28', '123');
     await controller.payCard();
-    expect(controller.snapshot().status).toBe('reconciling');
+    expect(controller.snapshot().status).toBe('succeeded');
     expect(controller.snapshot().activeIdempotencyKey).toBe('idem_504');
-    expect((await api.queryPaymentStatus('idem_504'))?.status).toBe('processing');
+    expect((await api.queryPaymentStatus('idem_504'))?.status).toBe('captured');
     await controller.recover();
     expect(controller.snapshot().activeIdempotencyKey).toBe('idem_504');
     expect(api.exportLedger()).toHaveLength(1);
