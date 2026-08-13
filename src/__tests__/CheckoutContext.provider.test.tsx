@@ -52,6 +52,19 @@ async function mountCheckout() {
   });
 }
 
+async function waitForCheckoutState(
+  predicate: () => boolean,
+  description: string
+) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+  throw new Error(`Timed out waiting for checkout state: ${description}`);
+}
+
 describe('CheckoutProvider durable-boundary behavior', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -248,11 +261,10 @@ describe('CheckoutProvider durable-boundary behavior', () => {
     const processPayment = jest.spyOn(mockPaymentApi, 'processPayment');
 
     await mountCheckout();
-    await act(async () => {
-      for (let pending = 0; pending < 10; pending += 1) {
-        await Promise.resolve();
-      }
-    });
+    await waitForCheckoutState(
+      () => checkout.statusMessage?.includes('No new charge') === true,
+      'uncertain recovery to become non-retryable'
+    );
     expect(checkout.status).toBe('reconciling');
     expect(checkout.statusMessage).toContain('No new charge');
     await act(async () => {
@@ -314,11 +326,10 @@ describe('CheckoutProvider durable-boundary behavior', () => {
     const processPayment = jest.spyOn(mockPaymentApi, 'processPayment');
 
     await mountCheckout();
-    await act(async () => {
-      for (let pending = 0; pending < 10; pending += 1) {
-        await Promise.resolve();
-      }
-    });
+    await waitForCheckoutState(
+      () => checkout.statusMessage?.includes('No new charge') === true,
+      'captured payment persistence failure to become non-retryable'
+    );
     expect(checkout.status).toBe('reconciling');
     expect(checkout.statusMessage).toContain('No new charge');
     await act(async () => {
