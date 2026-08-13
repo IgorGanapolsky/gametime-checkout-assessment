@@ -1,12 +1,12 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useCheckout } from '../context/CheckoutContext';
+import { dollarsFromCents } from '../types/checkout';
 
 export const OrderSummary: React.FC = () => {
-  const { cart, setQuantity, status } = useCheckout();
+  const { cart, setQuantity, status, eligibility } = useCheckout();
   const item = cart.items[0];
-
-  const isLocked = status === 'processing' || status === 'succeeded';
+  const isLocked = status !== 'idle' && status !== 'cancelled' && status !== 'declined' && status !== 'failed';
 
   return (
     <View style={styles.container}>
@@ -41,26 +41,33 @@ export const OrderSummary: React.FC = () => {
         </View>
       </View>
 
+      <Text style={styles.affirmHint}>
+        Affirm {eligibility.affirmAvailable ? 'is' : 'is not'} available
+        {' '}(shown only when total is over $100). Qty 1 stays under; qty 2 crosses.
+      </Text>
+
       <View style={styles.divider} />
 
       <View style={styles.priceRow}>
-        <Text style={styles.priceLabel}>Subtotal (${item.unitPrice} ea)</Text>
-        <Text style={styles.priceValue}>${cart.subtotal.toFixed(2)}</Text>
+        <Text style={styles.priceLabel}>
+          Subtotal (${dollarsFromCents(item.unitPriceCents)} ea)
+        </Text>
+        <Text style={styles.priceValue}>${dollarsFromCents(cart.subtotalCents)}</Text>
       </View>
 
       <View style={styles.priceRow}>
         <Text style={styles.priceLabel}>Service Fee</Text>
-        <Text style={styles.priceValue}>${cart.serviceFee.toFixed(2)}</Text>
+        <Text style={styles.priceValue}>${dollarsFromCents(cart.serviceFeeCents)}</Text>
       </View>
 
       <View style={styles.priceRow}>
         <Text style={styles.priceLabel}>Facility Fee</Text>
-        <Text style={styles.priceValue}>${cart.facilityFee.toFixed(2)}</Text>
+        <Text style={styles.priceValue}>${dollarsFromCents(cart.facilityFeeCents)}</Text>
       </View>
 
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>Total Due</Text>
-        <Text style={styles.totalValue}>${cart.total.toFixed(2)}</Text>
+        <Text style={styles.totalValue}>${dollarsFromCents(cart.totalCents)}</Text>
       </View>
     </View>
   );
@@ -138,6 +145,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     marginHorizontal: 14,
+  },
+  affirmHint: {
+    color: '#64748B',
+    fontSize: 11,
+    marginTop: 10,
+    lineHeight: 16,
   },
   divider: {
     height: 1,

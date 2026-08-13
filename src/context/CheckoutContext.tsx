@@ -1,12 +1,12 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
-  useCallback,
 } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   CartSummary,
   CheckoutStatus,
@@ -15,30 +15,48 @@ import {
   PaymentResponse,
   PersistentPaymentState,
 } from '../types/checkout';
-import { parseAndValidateCard } from '../services/cardValidator';
+import { parseAndValidateCard, tokenizeCard } from '../services/cardValidator';
 import { evaluateEligibility } from '../services/eligibilityEngine';
 import { mockPaymentApi } from '../services/mockPaymentApi';
+import {
+  clearPersistedLedger,
+  clearSession,
+  hydrateLedger,
+  loadSession,
+  newIdempotencyKey,
+  persistLedger,
+  persistSession,
+} from '../services/paymentSession';
 import { useEnvironment } from './EnvironmentContext';
 
-const PERSISTENCE_KEY = '@gt_checkout_pending_state_v1';
+const ORDER_ID = 'ord_sf_la_lower_114';
+const UNIT_PRICE_CENTS = 7900;
+const FACILITY_FEE_CENTS = 400;
 
-const initialCart: CartSummary = {
-  items: [
-    {
-      id: 'item_sf_la',
-      name: 'SF Giants vs LA Dodgers',
-      section: 'Lower Box 114',
-      row: '12',
-      seats: ['14', '15'],
-      unitPrice: 165.0,
-      quantity: 2,
-    },
-  ],
-  subtotal: 330.0,
-  serviceFee: 32.5,
-  facilityFee: 8.0,
-  total: 370.5,
-};
+function cartFromQuantity(quantity: number): CartSummary {
+  const qty = Math.max(1, Math.min(6, quantity));
+  const subtotalCents = UNIT_PRICE_CENTS * qty;
+  const serviceFeeCents = Math.round(subtotalCents * 0.1);
+  return {
+    items: [
+      {
+        id: 'item_sf_la',
+        name: 'SF Giants vs LA Dodgers',
+        section: 'Lower Box 114',
+        row: '12',
+        seats: Array.from({ length: qty }, (_, i) => String(14 + i)),
+        unitPriceCents: UNIT_PRICE_CENTS,
+        quantity: qty,
+      },
+    ],
+    subtotalCents,
+    serviceFeeCents,
+    facilityFeeCents: FACILITY_FEE_CENTS,
+    totalCents: subtotalCents + serviceFeeCents + FACILITY_FEE_CENTS,
+  };
+}
+
+export type ExpressSheet = 'apple_pay' | 'google_pay' | 'affirm' | null;
 
 interface CheckoutContextType {
   cart: CartSummary;
@@ -49,272 +67,264 @@ interface CheckoutContextType {
   cardData: CreditCardData;
   updateCardDetails: (number: string, expiry: string, cvc: string) => void;
   eligibility: ReturnType<typeof evaluateEligibility>;
-  processExpressPayment: (method: PaymentMethodId) => Promise<void>;
+  beginExpressPayment: (method: Exclude<PaymentMethodId, 'credit_card'>) => Promise<void>;
+  confirmExpressSheet: () => Promise<void>;
+  cancelExpressSheet: () => Promise<void>;
   processCardPayment: () => Promise<void>;
   lastResponse: PaymentResponse | null;
+  expressSheet: ExpressSheet;
   isRecoveringFromInterruption: boolean;
-  resetCheckout: () => void;
-  simulateInterruption: () => void;
+  resetCheckout: () => Promise<void>;
+  simulateKillRelaunch: () => Promise<void>;
 }
 
-const CheckoutContext = createContext<CheckoutContextType | undefined>(
-  undefined
-);
+const CheckoutContext = createContext<CheckoutContextType | undefined>(undefined);
 
 export const CheckoutProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { device, override } = useEnvironment();
-  const [cart, setCart] = useState<CartSummary>(initialCart);
+  const [cart, setCart] = useState<CartSummary>(() => cartFromQuantity(1));
   const [status, setStatus] = useState<CheckoutStatus>('idle');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [activeIdempotencyKey, setActiveIdempotencyKey] = useState<
-    string | null
-  >(null);
-  const [lastResponse, setLastResponse] = useState<PaymentResponse | null>(
-    null
-  );
+  const [activeIdempotencyKey, setActiveIdempotencyKey] = useState<string | null>(null);
+  const [lastResponse, setLastResponse] = useState<PaymentResponse | null>(null);
+  const [expressSheet, setExpressSheet] = useState<ExpressSheet>(null);
   const [isRecoveringFromInterruption, setIsRecoveringFromInterruption] =
-    useState<boolean>(false);
-
+    useState(false);
   const [cardInputs, setCardInputs] = useState({
     number: '',
     expiry: '',
     cvc: '',
   });
 
+  const inFlightRef = useRef(false);
+  const attemptRef = useRef<PersistentPaymentState | null>(null);
+
   const cardData = parseAndValidateCard(
     cardInputs.number,
     cardInputs.expiry,
     cardInputs.cvc
   );
-
-  const eligibility = evaluateEligibility(device, cart.total, override);
+  const eligibility = evaluateEligibility(device, cart.totalCents, override);
 
   const setQuantity = (qty: number) => {
-    const newQty = Math.max(1, qty);
-    const subtotal = initialCart.items[0].unitPrice * newQty;
-    const serviceFee = Math.round(subtotal * 0.1 * 100) / 100;
-    const facilityFee = 8.0;
-    const total = subtotal + serviceFee + facilityFee;
-
-    setCart({
-      items: [
-        {
-          ...initialCart.items[0],
-          quantity: newQty,
-        },
-      ],
-      subtotal,
-      serviceFee,
-      facilityFee,
-      total,
-    });
+    if (status !== 'idle') return;
+    setCart(cartFromQuantity(qty));
   };
 
   const updateCardDetails = (number: string, expiry: string, cvc: string) => {
     setCardInputs({ number, expiry, cvc });
   };
 
-  /**
-   * Helper to persist pending payment state to disk before network dispatch.
-   */
-  const savePendingState = async (
-    key: string,
-    method: PaymentMethodId
-  ): Promise<void> => {
-    const pendingState: PersistentPaymentState = {
-      idempotencyKey: key,
-      status: 'processing',
-      paymentMethod: method,
-      amount: cart.total,
-      startedAt: new Date().toISOString(),
-    };
-    await AsyncStorage.setItem(PERSISTENCE_KEY, JSON.stringify(pendingState));
-  };
+  const applyTerminal = useCallback(async (response: PaymentResponse) => {
+    setLastResponse(response);
+    inFlightRef.current = false;
+    if (response.success) {
+      setStatus('succeeded');
+      setStatusMessage('Payment confirmed. Tickets are ready.');
+      await clearSession();
+      return;
+    }
+    if (response.status === 'cancelled') {
+      setStatus('cancelled');
+      setStatusMessage(response.errorMessage || 'Payment cancelled.');
+      await clearSession();
+      return;
+    }
+    if (response.status === 'processing') {
+      setStatus('reconciling');
+      setStatusMessage("We don't know yet — checking with the payment API.");
+      return;
+    }
+    setStatus(response.status === 'declined' ? 'declined' : 'failed');
+    setStatusMessage(response.errorMessage || 'Payment failed.');
+    await clearSession();
+  }, []);
 
-  const clearPendingState = async (): Promise<void> => {
-    await AsyncStorage.removeItem(PERSISTENCE_KEY);
-  };
+  const charge = useCallback(
+    async (attempt: PersistentPaymentState) => {
+      inFlightRef.current = true;
+      setStatus('processing');
+      setStatusMessage('Authorizing payment…');
+      await persistSession({ ...attempt, status: 'processing' });
 
-  /**
-   * Recovers state if app was interrupted (backgrounded or killed mid-flight).
-   */
-  const recoverPendingPayment = useCallback(async () => {
-    try {
-      const storedJson = await AsyncStorage.getItem(PERSISTENCE_KEY);
-      if (!storedJson) return;
-
-      const storedState: PersistentPaymentState = JSON.parse(storedJson);
-      setIsRecoveringFromInterruption(true);
-      setStatus('awaiting_interruption_resolution');
-      setStatusMessage(
-        'Resuming checkout... Checking transaction status with backend.'
-      );
-
-      // Query mock payment backend with saved idempotency key
-      const result = await mockPaymentApi.queryPaymentStatus(
-        storedState.idempotencyKey
-      );
-
-      if (result) {
-        setLastResponse(result);
-        if (result.success) {
-          setStatus('succeeded');
-          setStatusMessage('Payment confirmed! Your tickets are ready.');
-        } else {
-          setStatus('declined');
-          setStatusMessage(result.errorMessage || 'Payment was declined.');
+      try {
+        const response = await mockPaymentApi.processPayment({
+          idempotencyKey: attempt.idempotencyKey,
+          orderId: attempt.orderId,
+          paymentMethod: attempt.paymentMethod,
+          amountCents: attempt.amountCents,
+          currency: 'usd',
+          paymentMethodToken: attempt.paymentMethodToken || 'tok_missing',
+          simulateFailureMode: override.forceFailureMode,
+          simulateSlowNetwork: override.simulateSlowNetwork,
+        });
+        await persistLedger();
+        await applyTerminal(response);
+      } catch (err) {
+        await persistLedger();
+        // Network drop after the API accepted the request: stay reconciling
+        // and keep the same idempotency key so a retry is a GET, not a new POST.
+        setStatus('reconciling');
+        setStatusMessage(
+          err instanceof Error
+            ? `${err.message} Checking whether the charge already landed…`
+            : "We don't know yet — checking with the payment API."
+        );
+        inFlightRef.current = false;
+        const recovered = await mockPaymentApi.queryPaymentStatus(attempt.idempotencyKey);
+        if (recovered && recovered.status !== 'processing') {
+          await applyTerminal(recovered);
         }
+      }
+    },
+    [applyTerminal, override.forceFailureMode, override.simulateSlowNetwork]
+  );
+
+  const reconcile = useCallback(async () => {
+    if (inFlightRef.current) {
+      return;
+    }
+    const stored = attemptRef.current || (await loadSession());
+    if (!stored) return;
+
+    setIsRecoveringFromInterruption(true);
+    setActiveIdempotencyKey(stored.idempotencyKey);
+    setStatus('reconciling');
+    setStatusMessage("We don't know yet — checking with the payment API.");
+
+    try {
+      await hydrateLedger();
+      const result = await mockPaymentApi.queryPaymentStatus(stored.idempotencyKey);
+      if (result && result.status !== 'processing') {
+        await applyTerminal(result);
+      } else if (result?.status === 'processing') {
+        setStatus('reconciling');
+        setStatusMessage('Payment is still in flight. Waiting for a terminal result…');
       } else {
-        // Backend didn't receive it before kill; safely restore idle state without double charging
+        // API never saw the key. Safe to let the fan start a *new* attempt.
         setStatus('idle');
         setStatusMessage(
-          'Transaction was interrupted before completion. You can safely try again.'
+          'The last attempt never reached the payment API. You can try again — this will not double-charge.'
         );
+        await clearSession();
+        attemptRef.current = null;
+        setActiveIdempotencyKey(null);
       }
-      await clearPendingState();
-    } catch (err) {
-      console.warn('Failed to recover pending payment state:', err);
     } finally {
       setIsRecoveringFromInterruption(false);
     }
-  }, []);
+  }, [applyTerminal]);
 
-  // Listen for AppState changes (e.g. background -> active)
   useEffect(() => {
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active') {
-        recoverPendingPayment();
+    let mounted = true;
+    (async () => {
+      await hydrateLedger();
+      if (!mounted) return;
+      const stored = await loadSession();
+      if (stored) {
+        attemptRef.current = stored;
+        await reconcile();
+      }
+    })();
+
+    const onChange = (next: AppStateStatus) => {
+      if (next === 'active') {
+        void reconcile();
       }
     };
-
-    const subscription = AppState.addEventListener(
-      'change',
-      handleAppStateChange
-    );
-
-    // Initial cold-start recovery check
-    recoverPendingPayment();
-
+    const sub = AppState.addEventListener('change', onChange);
     return () => {
-      subscription.remove();
+      mounted = false;
+      sub.remove();
     };
-  }, [recoverPendingPayment]);
+  }, [reconcile]);
 
-  /**
-   * Executes Express payment (Apple Pay, Google Pay, Affirm) in one tap.
-   */
-  const processExpressPayment = async (method: PaymentMethodId) => {
-    const key = `idempotency_gt_exp_${Date.now()}_${Math.random()
-      .toString(36)
-      .substring(2, 6)}`;
+  const beginExpressPayment = async (
+    method: Exclude<PaymentMethodId, 'credit_card'>
+  ) => {
+    if (status !== 'idle' && status !== 'cancelled' && status !== 'declined' && status !== 'failed') {
+      return;
+    }
+    const key = newIdempotencyKey(`exp_${method}`);
+    const attempt: PersistentPaymentState = {
+      idempotencyKey: key,
+      orderId: ORDER_ID,
+      status: method === 'affirm' ? 'awaiting_redirect' : 'awaiting_wallet',
+      paymentMethod: method,
+      amountCents: cart.totalCents,
+      paymentMethodToken: `tok_express_${method}`,
+      startedAt: new Date().toISOString(),
+    };
+    attemptRef.current = attempt;
     setActiveIdempotencyKey(key);
-    setStatus('processing');
+    setExpressSheet(method);
+    setStatus(attempt.status);
     setStatusMessage(
-      `Authorizing ${
-        method === 'apple_pay'
-          ? 'Apple Pay'
-          : method === 'google_pay'
-          ? 'Google Pay'
-          : 'Affirm'
-      }...`
+      method === 'affirm'
+        ? 'Opening Affirm… if the app backgrounds, we will resume this attempt.'
+        : 'Opening wallet sheet… biometrics may background the app.'
     );
+    await persistSession(attempt);
 
-    try {
-      await savePendingState(key, method);
-
-      const response = await mockPaymentApi.processPayment({
-        idempotencyKey: key,
-        paymentMethod: method,
-        amount: cart.total,
-        currency: 'USD',
-        expressToken: `tok_express_${method}_${Date.now()}`,
-        simulateFailureMode: override.forceFailureMode as any,
-        simulateSlowNetwork: override.simulateSlowNetwork as any,
-      } as any);
-
-      setLastResponse(response);
-      if (response.success) {
-        setStatus('succeeded');
-        setStatusMessage('Transaction approved! Order confirmed.');
-      } else {
-        setStatus('declined');
-        setStatusMessage(response.errorMessage || 'Express payment failed.');
-      }
-    } catch (err: any) {
-      setStatus('failed');
-      setStatusMessage(
-        err?.message || 'Network error encountered during payment.'
-      );
-    } finally {
-      await clearPendingState();
+    if (override.forceFailureMode === 'cancelled_sheet') {
+      await cancelExpressSheet();
     }
   };
 
-  /**
-   * Executes standard Credit Card payment.
-   */
+  const confirmExpressSheet = async () => {
+    const attempt = attemptRef.current;
+    setExpressSheet(null);
+    if (!attempt) return;
+    await charge(attempt);
+  };
+
+  const cancelExpressSheet = async () => {
+    setExpressSheet(null);
+    setStatus('cancelled');
+    setStatusMessage('Wallet / Affirm cancelled. Nothing was charged.');
+    await clearSession();
+    attemptRef.current = null;
+    setActiveIdempotencyKey(null);
+  };
+
   const processCardPayment = async () => {
     if (!cardData.isComplete) return;
-
-    const key = `idempotency_gt_cc_${Date.now()}_${Math.random()
-      .toString(36)
-      .substring(2, 6)}`;
+    const token = tokenizeCard(cardData.cardNumber, cardData.cardBrand);
+    const key = newIdempotencyKey('card');
+    const attempt: PersistentPaymentState = {
+      idempotencyKey: key,
+      orderId: ORDER_ID,
+      status: 'processing',
+      paymentMethod: 'credit_card',
+      amountCents: cart.totalCents,
+      paymentMethodToken: token,
+      startedAt: new Date().toISOString(),
+    };
+    attemptRef.current = attempt;
     setActiveIdempotencyKey(key);
-    setStatus('processing');
-    setStatusMessage('Processing card payment with payment gateway...');
-
-    try {
-      await savePendingState(key, 'credit_card');
-
-      const response = await mockPaymentApi.processPayment({
-        idempotencyKey: key,
-        paymentMethod: 'credit_card',
-        amount: cart.total,
-        currency: 'USD',
-        cardDetails: {
-          lastFour: cardData.cardNumber.slice(-4),
-          brand: cardData.cardBrand,
-          expMonth: cardData.expiryMonth,
-          expYear: cardData.expiryYear,
-        },
-        simulateFailureMode: override.forceFailureMode as any,
-        simulateSlowNetwork: override.simulateSlowNetwork as any,
-      } as any);
-
-      setLastResponse(response);
-      if (response.success) {
-        setStatus('succeeded');
-        setStatusMessage('Payment processed successfully!');
-      } else {
-        setStatus('declined');
-        setStatusMessage(response.errorMessage || 'Card payment declined.');
-      }
-    } catch (err: any) {
-      setStatus('failed');
-      setStatusMessage(
-        err?.message || 'Connection failure while contacting payment gateway.'
-      );
-    } finally {
-      await clearPendingState();
-    }
+    await persistSession(attempt);
+    await charge(attempt);
   };
 
-  const resetCheckout = () => {
+  const resetCheckout = async () => {
+    inFlightRef.current = false;
+    attemptRef.current = null;
     setStatus('idle');
     setStatusMessage(null);
     setActiveIdempotencyKey(null);
     setLastResponse(null);
+    setExpressSheet(null);
     setCardInputs({ number: '', expiry: '', cvc: '' });
+    await clearSession();
   };
 
-  const simulateInterruption = async () => {
-    if (status === 'processing' && activeIdempotencyKey) {
-      setStatus('awaiting_interruption_resolution');
-      setStatusMessage('Simulating background app interruption...');
-      await recoverPendingPayment();
-    }
+  const simulateKillRelaunch = async () => {
+    inFlightRef.current = false;
+    setExpressSheet(null);
+    await persistLedger();
+    await reconcile();
   };
 
   return (
@@ -328,12 +338,15 @@ export const CheckoutProvider: React.FC<{ children: React.ReactNode }> = ({
         cardData,
         updateCardDetails,
         eligibility,
-        processExpressPayment,
+        beginExpressPayment,
+        confirmExpressSheet,
+        cancelExpressSheet,
         processCardPayment,
         lastResponse,
+        expressSheet,
         isRecoveringFromInterruption,
         resetCheckout,
-        simulateInterruption,
+        simulateKillRelaunch,
       }}
     >
       {children}
@@ -347,4 +360,9 @@ export function useCheckout() {
     throw new Error('useCheckout must be used within a CheckoutProvider');
   }
   return context;
+}
+
+export async function resetAllPaymentState(): Promise<void> {
+  await clearSession();
+  await clearPersistedLedger();
 }

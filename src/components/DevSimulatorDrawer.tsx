@@ -9,11 +9,12 @@ import {
   Switch,
 } from 'react-native';
 import { useEnvironment } from '../context/EnvironmentContext';
-import { useCheckout } from '../context/CheckoutContext';
-import { mockPaymentApi } from '../services/mockPaymentApi';
+import { resetAllPaymentState, useCheckout } from '../context/CheckoutContext';
+import { WalletOverride } from '../types/checkout';
 
 export const DevSimulatorDrawer: React.FC = () => {
   const {
+    device,
     override,
     updateOverride,
     resetOverride,
@@ -21,43 +22,51 @@ export const DevSimulatorDrawer: React.FC = () => {
     setDevDrawerOpen,
   } = useEnvironment();
 
-  const {
-    cart,
-    setQuantity,
-    resetCheckout,
-    simulateInterruption,
-    status,
-  } = useCheckout();
+  const { setQuantity, resetCheckout, simulateKillRelaunch, cart } = useCheckout();
+
+  const cycleWallet = (key: 'forceApplePayProvisioned' | 'forceGooglePaySetup') => {
+    const order: WalletOverride[] = ['device', true, false];
+    const current = override[key];
+    const next = order[(order.indexOf(current) + 1) % order.length];
+    updateOverride({ [key]: next });
+  };
 
   return (
     <>
-      {/* Floating Trigger FAB */}
       <TouchableOpacity
         style={styles.fabTrigger}
         onPress={() => setDevDrawerOpen(true)}
         activeOpacity={0.8}
       >
-        <Text style={styles.fabText}>🛠 DEV SIMULATOR</Text>
+        <Text style={styles.fabText}>REVIEW LAB</Text>
       </TouchableOpacity>
 
-      {/* Dev Simulator Modal */}
       <Modal
         visible={isDevDrawerOpen}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setDevDrawerOpen(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.drawerContainer}>
             <View style={styles.header}>
-              <Text style={styles.headerTitle}>Environment & API Simulator</Text>
+              <Text style={styles.headerTitle}>Review Lab</Text>
               <TouchableOpacity onPress={() => setDevDrawerOpen(false)}>
-                <Text style={styles.closeText}>✕ Close</Text>
+                <Text style={styles.closeText}>Close</Text>
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.content}>
-              <Text style={styles.sectionTitle}>1. TARGET PLATFORM OVERRIDE</Text>
+              <Text style={styles.meta}>
+                Detected device: {device.platform}
+                {device.hasApplePayCardProvisioned ? ' · wallet yes' : ' · wallet no'}
+                {device.hasGooglePaySetup ? ' · GPay yes' : ' · GPay no'}
+              </Text>
+              <Text style={styles.meta}>
+                Default detection is honest: simulators report no provisioned wallet.
+              </Text>
+
+              <Text style={styles.sectionTitle}>PLATFORM</Text>
               <View style={styles.buttonRow}>
                 {(['auto', 'ios', 'android'] as const).map((plat) => (
                   <TouchableOpacity
@@ -80,123 +89,95 @@ export const DevSimulatorDrawer: React.FC = () => {
                 ))}
               </View>
 
-              <Text style={styles.sectionTitle}>2. DEVICE CARD PROVISIONING</Text>
-              <View style={styles.switchRow}>
-                <Text style={styles.switchLabel}>Apple Pay Card Provisioned (iOS)</Text>
-                <Switch
-                  value={override.forceApplePayProvisioned}
-                  onValueChange={(val) =>
-                    updateOverride({ forceApplePayProvisioned: val })
-                  }
-                />
-              </View>
-              <View style={styles.switchRow}>
-                <Text style={styles.switchLabel}>Google Pay Set Up (Android)</Text>
-                <Switch
-                  value={override.forceGooglePaySetup}
-                  onValueChange={(val) =>
-                    updateOverride({ forceGooglePaySetup: val })
-                  }
-                />
-              </View>
+              <Text style={styles.sectionTitle}>WALLET CAPABILITY</Text>
+              <TouchableOpacity
+                style={styles.failModeBtn}
+                onPress={() => cycleWallet('forceApplePayProvisioned')}
+              >
+                <Text style={styles.failModeText}>
+                  Apple Pay provisioned: {String(override.forceApplePayProvisioned)}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.failModeBtn}
+                onPress={() => cycleWallet('forceGooglePaySetup')}
+              >
+                <Text style={styles.failModeText}>
+                  Google Pay set up: {String(override.forceGooglePaySetup)}
+                </Text>
+              </TouchableOpacity>
 
-              <Text style={styles.sectionTitle}>3. CART TOTAL (AFFIRM THRESHOLD &gt;$100)</Text>
+              <Text style={styles.sectionTitle}>CART / AFFIRM</Text>
               <View style={styles.buttonRow}>
                 <TouchableOpacity
-                  style={[
-                    styles.toggleBtn,
-                    cart.total > 100 && styles.toggleBtnActive,
-                  ]}
+                  style={[styles.toggleBtn, cart.items[0].quantity === 1 && styles.toggleBtnActive]}
+                  onPress={() => setQuantity(1)}
+                >
+                  <Text style={styles.toggleBtnText}>Qty 1 (~$90)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, cart.items[0].quantity >= 2 && styles.toggleBtnActive]}
                   onPress={() => setQuantity(2)}
                 >
-                  <Text
-                    style={[
-                      styles.toggleBtnText,
-                      cart.total > 100 && styles.toggleBtnTextActive,
-                    ]}
-                  >
-                    &gt; $100 ($370.50)
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.toggleBtn,
-                    cart.total <= 100 && styles.toggleBtnActive,
-                  ]}
-                  onPress={() => setQuantity(0)}
-                >
-                  <Text
-                    style={[
-                      styles.toggleBtnText,
-                      cart.total <= 100 && styles.toggleBtnTextActive,
-                    ]}
-                  >
-                    &lt; $100 ($45.00)
-                  </Text>
+                  <Text style={styles.toggleBtnText}>Qty 2 (~$178)</Text>
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.sectionTitle}>4. BACKEND FAILURE SCENARIOS</Text>
+              <Text style={styles.sectionTitle}>FAILURE PATHS</Text>
               {(
                 [
-                  { id: 'none', label: 'Normal Success (200 OK)' },
-                  { id: 'declined', label: 'Card Declined' },
-                  { id: 'cancelled_sheet', label: 'Apple Pay Sheet Cancelled' },
-                  { id: 'network_error', label: '504 Network Timeout' },
+                  { id: 'none', label: 'Happy path' },
+                  { id: 'declined', label: 'Issuer decline' },
+                  { id: 'cancelled_sheet', label: 'Cancel wallet sheet' },
+                  { id: 'network_error', label: '504 mid-request' },
                 ] as const
               ).map((mode) => (
                 <TouchableOpacity
                   key={mode.id}
                   style={[
                     styles.failModeBtn,
-                    override.forceFailureMode === mode.id &&
-                      styles.failModeBtnActive,
+                    override.forceFailureMode === mode.id && styles.failModeBtnActive,
                   ]}
                   onPress={() => updateOverride({ forceFailureMode: mode.id })}
                 >
                   <Text
                     style={[
                       styles.failModeText,
-                      override.forceFailureMode === mode.id &&
-                        styles.failModeTextActive,
+                      override.forceFailureMode === mode.id && styles.failModeTextActive,
                     ]}
                   >
-                    • {mode.label}
+                    {mode.label}
                   </Text>
                 </TouchableOpacity>
               ))}
 
-              <Text style={styles.sectionTitle}>5. NETWORK & INTERRUPTION TESTS</Text>
               <View style={styles.switchRow}>
-                <Text style={styles.switchLabel}>Simulate Slow Network (2.5s Delay)</Text>
+                <Text style={styles.switchLabel}>Slow network (2.5s)</Text>
                 <Switch
                   value={override.simulateSlowNetwork}
-                  onValueChange={(val) =>
-                    updateOverride({ simulateSlowNetwork: val })
-                  }
+                  onValueChange={(val) => updateOverride({ simulateSlowNetwork: val })}
                 />
               </View>
 
               <TouchableOpacity
                 style={styles.actionBtn}
-                onPress={() => {
-                  simulateInterruption();
+                onPress={async () => {
                   setDevDrawerOpen(false);
+                  await simulateKillRelaunch();
                 }}
               >
-                <Text style={styles.actionBtnText}>⚡ Simulate App Interruption / Relaunch</Text>
+                <Text style={styles.actionBtnText}>Simulate kill + relaunch</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.actionBtn, { backgroundColor: '#334155' }]}
-                onPress={() => {
-                  resetCheckout();
+                onPress={async () => {
+                  await resetCheckout();
                   resetOverride();
-                  mockPaymentApi.clearLedger();
+                  await resetAllPaymentState();
                 }}
               >
-                <Text style={styles.actionBtnText}>🔄 Reset All State & Backend Ledger</Text>
+                <Text style={styles.actionBtnText}>Reset session + ledger</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -215,11 +196,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 30,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
     zIndex: 99,
   },
   fabText: {
@@ -247,9 +223,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
   },
   headerTitle: {
     color: '#F8FAFC',
@@ -263,6 +236,11 @@ const styles = StyleSheet.create({
   },
   content: {
     marginBottom: 10,
+  },
+  meta: {
+    color: '#64748B',
+    fontSize: 12,
+    marginBottom: 6,
   },
   sectionTitle: {
     color: '#38BDF8',
@@ -290,7 +268,7 @@ const styles = StyleSheet.create({
     borderColor: '#38BDF8',
   },
   toggleBtnText: {
-    color: '#94A3B8',
+    color: '#E2E8F0',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -301,7 +279,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 10,
   },
   switchLabel: {
     color: '#CBD5E1',

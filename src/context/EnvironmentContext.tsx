@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState } from 'react';
-import { Platform } from 'react-native';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 import { DeviceCapabilities, EnvironmentOverride } from '../types/checkout';
+import { detectDeviceCapabilities } from '../services/deviceCapabilities';
 
 interface EnvironmentContextType {
   device: DeviceCapabilities;
@@ -11,35 +11,30 @@ interface EnvironmentContextType {
   resetOverride: () => void;
 }
 
-const defaultDevice: DeviceCapabilities = {
-  platform: Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web',
-  hasApplePayCardProvisioned: Platform.OS === 'ios',
-  hasGooglePaySetup: Platform.OS === 'android',
-};
-
 const defaultOverride: EnvironmentOverride = {
   forcePlatform: 'auto',
-  forceApplePayProvisioned: true,
-  forceGooglePaySetup: true,
-  forceCartTotal: null,
+  forceApplePayProvisioned: 'device',
+  forceGooglePaySetup: 'device',
   forceFailureMode: 'none',
   simulateSlowNetwork: false,
 };
 
-const EnvironmentContext = createContext<EnvironmentContextType | undefined>(undefined);
+const EnvironmentContext = createContext<EnvironmentContextType | undefined>(
+  undefined
+);
 
-export const EnvironmentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [device] = useState<DeviceCapabilities>(defaultDevice);
+export const EnvironmentProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const device = useMemo(() => detectDeviceCapabilities(), []);
   const [override, setOverride] = useState<EnvironmentOverride>(defaultOverride);
-  const [isDevDrawerOpen, setDevDrawerOpen] = useState<boolean>(false);
+  const [isDevDrawerOpen, setDevDrawerOpen] = useState(false);
 
   const updateOverride = (partial: Partial<EnvironmentOverride>) => {
     setOverride((prev) => ({ ...prev, ...partial }));
   };
 
-  const resetOverride = () => {
-    setOverride(defaultOverride);
-  };
+  const resetOverride = () => setOverride(defaultOverride);
 
   return (
     <EnvironmentContext.Provider
@@ -60,7 +55,7 @@ export const EnvironmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
 export function useEnvironment() {
   const context = useContext(EnvironmentContext);
   if (!context) {
-    throw new Error('useEnvironment must be used within an EnvironmentProvider');
+    throw new Error('useEnvironment must be used within a EnvironmentProvider');
   }
   return context;
 }

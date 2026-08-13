@@ -1,11 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useCheckout } from '../context/CheckoutContext';
+import { dollarsFromCents } from '../types/checkout';
 
 export const ExpressCheckout: React.FC = () => {
-  const { cart, eligibility, processExpressPayment, status } = useCheckout();
-
-  const isProcessing = status === 'processing';
+  const { cart, eligibility, beginExpressPayment, status } = useCheckout();
+  const busy = status !== 'idle' && status !== 'cancelled' && status !== 'declined' && status !== 'failed';
 
   const hasAnyExpress =
     eligibility.applePayAvailable ||
@@ -15,15 +15,17 @@ export const ExpressCheckout: React.FC = () => {
   if (!hasAnyExpress) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>Express Checkout Unavailable</Text>
+        <Text style={styles.emptyTitle}>No express methods for this fan</Text>
         <Text style={styles.emptySub}>
-          No express payment options provisioned for this device/cart amount. Please use credit card below.
+          Apple Pay / Google Pay stay hidden unless the platform and wallet
+          capability both pass. Affirm stays hidden at or under $100. Card is
+          always available below.
         </Text>
       </View>
     );
   }
 
-  const affirmMonthly = (cart.total / 4).toFixed(2);
+  const affirmMonthly = dollarsFromCents(Math.round(cart.totalCents / 4));
 
   return (
     <View style={styles.container}>
@@ -31,20 +33,20 @@ export const ExpressCheckout: React.FC = () => {
 
       {eligibility.applePayAvailable && (
         <TouchableOpacity
-          style={[styles.expressBtn, styles.applePayBtn, isProcessing && styles.btnDisabled]}
-          onPress={() => processExpressPayment('apple_pay')}
-          disabled={isProcessing}
+          style={[styles.expressBtn, styles.applePayBtn, busy && styles.btnDisabled]}
+          onPress={() => beginExpressPayment('apple_pay')}
+          disabled={busy}
           activeOpacity={0.8}
         >
-          <Text style={styles.applePayText}>Pay</Text>
+          <Text style={styles.applePayText}> Pay</Text>
         </TouchableOpacity>
       )}
 
       {eligibility.googlePayAvailable && (
         <TouchableOpacity
-          style={[styles.expressBtn, styles.googlePayBtn, isProcessing && styles.btnDisabled]}
-          onPress={() => processExpressPayment('google_pay')}
-          disabled={isProcessing}
+          style={[styles.expressBtn, styles.googlePayBtn, busy && styles.btnDisabled]}
+          onPress={() => beginExpressPayment('google_pay')}
+          disabled={busy}
           activeOpacity={0.8}
         >
           <Text style={styles.googlePayText}>G Pay</Text>
@@ -53,16 +55,14 @@ export const ExpressCheckout: React.FC = () => {
 
       {eligibility.affirmAvailable && (
         <TouchableOpacity
-          style={[styles.expressBtn, styles.affirmBtn, isProcessing && styles.btnDisabled]}
-          onPress={() => processExpressPayment('affirm')}
-          disabled={isProcessing}
+          style={[styles.expressBtn, styles.affirmBtn, busy && styles.btnDisabled]}
+          onPress={() => beginExpressPayment('affirm')}
+          disabled={busy}
           activeOpacity={0.8}
         >
           <View style={styles.affirmRow}>
             <Text style={styles.affirmLogo}>affirm</Text>
-            <Text style={styles.affirmDetail}>
-              Pay 4 payments of ${affirmMonthly}/mo
-            </Text>
+            <Text style={styles.affirmDetail}>4 payments of ${affirmMonthly}</Text>
           </View>
         </TouchableOpacity>
       )}
@@ -146,14 +146,15 @@ const styles = StyleSheet.create({
     borderColor: '#1E293B',
   },
   emptyTitle: {
-    color: '#64748B',
+    color: '#94A3B8',
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 2,
   },
   emptySub: {
-    color: '#475569',
+    color: '#64748B',
     fontSize: 11,
+    lineHeight: 16,
   },
   orDividerContainer: {
     flexDirection: 'row',

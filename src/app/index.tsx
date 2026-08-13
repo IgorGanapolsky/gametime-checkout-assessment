@@ -5,6 +5,7 @@ import { ExpressCheckout } from '../components/ExpressCheckout';
 import { CreditCardForm } from '../components/CreditCardForm';
 import { DevSimulatorDrawer } from '../components/DevSimulatorDrawer';
 import { PaymentStatusModal } from '../components/PaymentStatusModal';
+import { ExpressSheet } from '../components/ExpressSheet';
 
 export default function CheckoutScreen() {
   return (
@@ -12,35 +13,27 @@ export default function CheckoutScreen() {
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.banner}>
-          <Text style={styles.bannerIcon}>🔒</Text>
+          <Text style={styles.bannerIcon}>●</Text>
           <View style={styles.bannerTextCol}>
-            <Text style={styles.bannerTitle}>100% Buyer Guarantee</Text>
+            <Text style={styles.bannerTitle}>Outside the venue · patchy signal</Text>
             <Text style={styles.bannerSubtitle}>
-              Authentic tickets delivered right on time for your game.
+              Express methods complete in one interaction. Card will not submit until it is valid.
             </Text>
           </View>
         </View>
 
-        {/* Order Breakdown */}
         <OrderSummary />
-
-        {/* Express Checkout Options (Apple Pay, Google Pay, Affirm) */}
         <ExpressCheckout />
-
-        {/* Universal Credit Card Form */}
         <CreditCardForm />
-
-        {/* Space at bottom for FAB */}
-        <View style={{ height: 80 }} />
+        <View style={{ height: 88 }} />
       </ScrollView>
 
-      {/* Floating Dev Environment Simulator Drawer */}
       <DevSimulatorDrawer />
-
-      {/* Status & App Interruption Recovery Overlay */}
+      <ExpressSheet />
       <PaymentStatusModal />
     </SafeAreaView>
   );
@@ -70,7 +63,8 @@ const styles = StyleSheet.create({
     borderColor: '#1E293B',
   },
   bannerIcon: {
-    fontSize: 22,
+    color: '#38BDF8',
+    fontSize: 18,
     marginRight: 10,
   },
   bannerTextCol: {

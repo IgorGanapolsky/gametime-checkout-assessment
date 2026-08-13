@@ -1,51 +1,57 @@
 import {
+  AFFIRM_THRESHOLD_CENTS,
   DeviceCapabilities,
   EnvironmentOverride,
   PaymentEligibilityRules,
+  PlatformType,
 } from '../types/checkout';
 
+function resolvePlatform(
+  device: DeviceCapabilities,
+  override?: EnvironmentOverride
+): PlatformType {
+  if (override && override.forcePlatform !== 'auto') {
+    return override.forcePlatform;
+  }
+  return device.platform;
+}
+
+function resolveFlag(
+  deviceValue: boolean,
+  overrideValue: EnvironmentOverride['forceApplePayProvisioned'] | undefined
+): boolean {
+  if (overrideValue === undefined || overrideValue === 'device') {
+    return deviceValue;
+  }
+  return overrideValue;
+}
+
 /**
- * Pure evaluation function for payment method eligibility.
- * Evaluates platform capabilities, provisioned cards, and cart purchase threshold.
+ * Pure eligibility function. Showing a method that cannot complete is worse
+ * than hiding it — the rules below are the product spec, not heuristics.
+ *
+ * Affirm is available only when the purchase total is *over* $100
+ * (`totalCents > 10000`). Quantity and fee changes must re-run this.
  */
 export function evaluateEligibility(
   device: DeviceCapabilities,
-  cartTotal: number,
+  totalCents: number,
   override?: EnvironmentOverride
 ): PaymentEligibilityRules {
-  // Apply platform overrides if active
-  const effectivePlatform =
-    override && override.forcePlatform !== 'auto'
-      ? override.forcePlatform
-      : device.platform;
-
-  const effectiveApplePayCard =
-    override && override.forcePlatform !== 'auto'
-      ? override.forceApplePayProvisioned
-      : device.hasApplePayCardProvisioned;
-
-  const effectiveGooglePaySetup =
-    override && override.forcePlatform !== 'auto'
-      ? override.forceGooglePaySetup
-      : device.hasGooglePaySetup;
-
-  const effectiveTotal =
-    override && override.forceCartTotal !== null
-      ? override.forceCartTotal
-      : cartTotal;
-
-  const applePayAvailable =
-    effectivePlatform === 'ios' && effectiveApplePayCard;
-
-  const googlePayAvailable =
-    effectivePlatform === 'android' && effectiveGooglePaySetup;
-
-  const affirmAvailable = effectiveTotal > 100;
+  const platform = resolvePlatform(device, override);
+  const appleProvisioned = resolveFlag(
+    device.hasApplePayCardProvisioned,
+    override?.forceApplePayProvisioned
+  );
+  const googleReady = resolveFlag(
+    device.hasGooglePaySetup,
+    override?.forceGooglePaySetup
+  );
 
   return {
-    applePayAvailable,
-    googlePayAvailable,
-    affirmAvailable,
-    creditCardAvailable: true, // Universal fallback
+    applePayAvailable: platform === 'ios' && appleProvisioned,
+    googlePayAvailable: platform === 'android' && googleReady,
+    affirmAvailable: totalCents > AFFIRM_THRESHOLD_CENTS,
+    creditCardAvailable: true,
   };
 }

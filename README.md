@@ -1,143 +1,145 @@
-# Gametime Mobile Checkout — Staff Mobile Engineer Take-Home
+# Gametime Staff Mobile — Checkout & Payments
 
-A production-grade, highly resilient React Native (Expo) checkout application built for **Gametime**'s mobile app. Tailored for high-friction, last-minute ticket purchases outside venues on patchy cell coverage.
+React Native (Expo) checkout for the Staff Mobile Engineer take-home.
 
----
+A fan has already picked seats. This screen decides **which payment methods they are allowed to see**, makes **express pay actually express**, keeps **card entry honest**, and talks to a **mock payment API** whose contract is designed so a kill/relaunch cannot double-charge.
 
-## 🚀 Quick Start & How to Run
+Deadline context: assignment email received **2026-08-12 (Wednesday)**; submit by **2026-08-17**.
 
-### Prerequisites
-- **Node.js**: `v18+` or `v20+`
-- **npm** or **yarn**
-- **Expo Go app** (iOS / Android) or iOS Simulator / Android Emulator
+## What I built
 
-### Installation & Run Commands
+- Checkout screen: order summary, quantity (fees recompute), eligibility-gated express methods, card form, Review Lab.
+- Pure eligibility engine (`src/services/eligibilityEngine.ts`).
+- Card validation: formatting, brand, Luhn, future expiry, CVC length (`src/services/cardValidator.ts`).
+- Wallet / Affirm **stubs** that mimic a native sheet and a redirect — tap completes in that flow. No second Submit.
+- In-process mock API with a JSON request/response boundary, idempotency, processing-before-wait, and GET-by-key reconciliation (`src/services/mockPaymentApi.ts`).
+- AppState + persisted session + persisted ledger so background and kill/relaunch resume the **same** attempt.
+
+Visual polish was deliberately second to eligibility, lifecycle, and form UX.
+
+## How to run
+
+Requires Node 20+.
+
 ```bash
-# 1. Navigate to the repository
-cd gametime-mobile-checkout
-
-# 2. Install dependencies
 npm install
-
-# 3. Run Jest Unit & E2E Instrumentation Tests
 npm test
-
-# 4. Start Expo Development Server
-npm start
+npx expo start
 ```
 
-- **iOS Simulator**: Press `i` in the terminal or run `npm run ios`.
-- **Android Emulator**: Press `a` in the terminal or run `npm run android`.
-- **Web Browser Preview**: Press `w` in the terminal or run `npm run web`.
-- **Tested Environments**: Tested on iOS Simulator (iPhone 16 Pro, iOS 18.0), Android Emulator (Pixel 8, API 34), and Web.
+Then:
 
----
+- iOS Simulator: `i`
+- Android emulator: `a`
+- Expo Go on a device: scan the QR (same LAN)
 
-## 🎯 Architecture & Core Solutions
+**Tested:** `npm test` on Node 22 (macOS). App starts with Expo SDK 57. Simulator/emulator is enough — no paid Apple Developer account, no real Apple Pay / Google Pay / Affirm credentials.
 
-### 1. Payment Eligibility Detection Engine (`src/services/eligibilityEngine.ts`)
-Express payment options appear dynamically based on real-time device capabilities and cart parameters:
-- **Apple Pay**: Appears ONLY when `platform === 'ios'` AND device has a provisioned card in Apple Wallet (`PKPaymentAuthorizationViewController.canMakePayments()`).
-- **Google Pay**: Appears ONLY when `platform === 'android'` AND Google Pay API is initialized/available.
-- **Affirm (BNPL)**: Appears ONLY when purchase total > `$100.00` (re-evaluated dynamically as ticket quantity or fees change).
-- **Credit Card**: Universal fallback, always available.
+On first launch in the iOS Simulator you should **not** see Apple Pay. That is the honest default: simulators do not have a provisioned Wallet card. Open **REVIEW LAB** (bottom right) → platform `iOS` → cycle **Apple Pay provisioned** to `true`.
 
-### 2. Form UX & Native Keyboard Optimization (`src/components/CreditCardForm.tsx`)
-- Real-time **Luhn Algorithm (Mod 10)** validation (`validateLuhn`).
-- Automatic **Card Brand Detection** (Visa, Mastercard, American Express, Discover) with dynamic brand badges.
-- Native keyboard props: `keyboardType="numeric"`, `textContentType="creditCardNumber"`, `autoComplete="cc-number"`.
-- Real-time 4-4-4-4 / 4-6-5 digit grouping and `MM/YY` expiration formatting.
-- Strict submit enforcement: The **"Pay $[Amount]"** button remains disabled until card number, future expiration date, and CVC length (3 digits for Visa/MC/Disc, 4 digits for Amex) are valid.
+## Eligibility
 
-### 3. Single-Tap Express Checkout Execution (`src/components/ExpressCheckout.tsx`)
-- Tapping Apple Pay, Google Pay, or Affirm completes the purchase in **one interaction**. No secondary "Submit Order" button required.
-- Triggers payment authorization immediately upon sheet/biometric confirmation.
+| Method | Shown when |
+|---|---|
+| Apple Pay | Effective platform is iOS **and** a card is provisioned in Wallet |
+| Google Pay | Effective platform is Android **and** Google Pay is set up |
+| Affirm | Cart total is **strictly over $100.00** (`totalCents > 10000`) |
+| Card | Always |
 
-### 4. Idempotent Payment API Contract (`src/services/mockPaymentApi.ts`)
-```typescript
-interface PaymentRequest {
-  idempotencyKey: string; // Client-generated UUID (e.g. idempotency_gt_exp_...)
-  paymentMethod: 'apple_pay' | 'google_pay' | 'affirm' | 'credit_card';
-  amount: number;
-  currency: string;
-  cardDetails?: { lastFour: string; brand: string; expMonth: string; expYear: string };
-  expressToken?: string;
-  simulateFailureMode?: 'none' | 'declined' | 'network_error' | 'cancelled_sheet';
-}
+Detection default (`src/services/deviceCapabilities.ts`):
 
-interface PaymentResponse {
-  success: boolean;
-  status: 'captured' | 'declined' | 'error' | 'cancelled';
-  transactionId?: string;
-  errorMessage?: string;
-  idempotencyKey: string;
-  processedAt: string;
-  wasIdempotentReplay?: boolean; // Indicates cached server replay
+- Platform from `Platform.OS`.
+- Wallet capability is **false on simulators / Expo Go** and true only on a real device of that OS. A production build would swap the stub for `PKPaymentAuthorizationController.canMakePaymentsUsingNetworks` / `PaymentsClient.isReadyToPay`. The stub has the same shape: capability check → (sheet \| redirect) → authorization token.
+
+Review Lab can force platform and wallet independently so one device can exercise every branch.
+
+Affirm reacts to quantity: default qty 1 is about **$90.90** (hidden); qty 2 is about **$177.80** (shown). Fees are integer cents.
+
+## Mock API contract
+
+`POST /v1/payments` shape (in-process, JSON cloned both ways):
+
+```json
+{
+  "idempotencyKey": "card_<uuid>",
+  "orderId": "ord_sf_la_lower_114",
+  "paymentMethod": "credit_card",
+  "amountCents": 9090,
+  "currency": "usd",
+  "paymentMethodToken": "tok_visa_4242"
 }
 ```
-**Why this contract?** In live event ticketing, fans tap buy on unstable cell towers outside stadiums. Attaching a client-side `idempotencyKey` before dispatch guarantees that server retries return the original transaction result without double-charging the fan.
 
-### 5. App Lifecycle Interruption & Recovery State Machine (`src/context/CheckoutContext.tsx`)
+Responses: `processing` | `captured` | `declined` | `cancelled` | `conflict`.
+
+`GET /v1/payments/by-idempotency/:key` is `queryPaymentStatus`.
+
+Why this shape:
+
+- **Integer cents** — ticket + fee math never uses floats.
+- **Token, never PAN** — `tokenizeCard` maps `4242…4242` → `tok_visa_4242` and `4000…0002` → `tok_visa_declined`.
+- **Idempotency is the anti-double-charge primitive.** Same key + same fingerprint replays the original row. Same key + different amount/method/token is HTTP 409.
+- **`processing` is written before the simulated network wait.** If the app is killed mid-request, relaunch finds a row instead of inventing a new key.
+- In-process transport is enough to defend the contract. Swapping `MockPaymentBackend` for `fetch` is a one-file change; the checkout already treats the boundary as JSON.
+
+Failure paths the UI handles:
+
+- Issuer decline (`4000 0000 0000 0002` or Review Lab → Issuer decline)
+- Wallet / Affirm cancel (sheet Cancel — **no charge**)
+- 504 mid-request (Review Lab → 504; UI goes to **we're checking**, then GET)
+
+## State flow
+
 ```
-[idle] ──(Tap Payment)──> [savePendingState] ──> [processing] ──(OS Interrupt / AppState: background)
-                                                        │
-[succeeded] <──(Query Status by IdempotencyKey)─────────┴──(AppState: active / Cold Relaunch)
+idle
+  ├─ express tap → awaiting_wallet | awaiting_redirect  (sheet/redirect stub)
+  │                   ├─ Pay/Continue → processing → captured | declined
+  │                   └─ Cancel → cancelled (no API charge)
+  └─ valid card Pay → processing → captured | declined
+                         └─ 504 → reconciling → GET same key
 ```
-- **Interruption Resiliency**: When an OS biometric sheet, Affirm webview redirect, incoming phone call, or backgrounding event (`AppState` -> `background`) interrupts the flow, the pending `idempotencyKey` and payload are stored in `@react-native-async-storage/async-storage`.
-- On cold launch or app foregrounding (`AppState` -> `active`), `recoverPendingPayment()` queries `mockPaymentApi.queryPaymentStatus(idempotencyKey)`.
-- If the server captured the charge while backgrounded, the UI transitions directly to **"Order Confirmed"** with the receipt. If the request never reached the server, it resets cleanly to `idle` without double charging.
 
----
+Background (`AppState` → inactive/background) does **not** reset. The attempt (idempotency key, amount, method, token) is already on disk.
 
-## 🛠 Interactive Dev Simulator Drawer
+Kill + relaunch: hydrate the ledger, load the session, GET the key.
 
-Includes a hidden QA / Environment Simulator Drawer (accessible via the floating **"🛠 DEV SIMULATOR"** FAB button):
-1. **Target Platform Override**: Switch between `Auto`, `iOS`, and `Android`.
-2. **Device Card Provisioning**: Toggle Apple Pay provisioned card or Google Pay set up.
-3. **Cart Total Toggle**: Instantly switch between `$370.50` (> $100) and `$45.00` (< $100) to test Affirm visibility rules.
-4. **Backend Failure Scenarios**: Force `Normal Success (200 OK)`, `Card Declined`, `Apple Pay Sheet Cancelled`, or `504 Gateway Timeout`.
-5. **App Interruption Simulator**: Trigger backgrounding/relaunch simulation to verify idempotency state recovery.
+- captured → success (do not charge again)
+- declined → show decline, new attempt needs a **new** key
+- processing → stay on “we don’t know yet”
+- missing → the POST never landed; a new attempt is safe
 
----
+A local in-flight request is not overwritten by AppState recovery (that race is how you double-charge).
 
-## 🧪 Testing Suite (Jest & E2E Instrumentation)
+## Card UX
 
-Run unit and E2E instrumentation tests:
+- Format and brand on keystroke.
+- Luhn / expiry / CVC errors on blur once the field is long enough — so iOS/Google autofill can land a full PAN before we shout.
+- `keyboardType="number-pad"`, `textContentType` / `autoComplete` for number, expiry, CVC.
+- Pay stays disabled until the card is complete.
+
+## Tradeoffs
+
+- In-process API instead of a separate Express process so Expo Go on a phone does not need `localhost` routing.
+- Wallet / Affirm are stubs with the real interaction shape, not sandbox SDKs (per the brief).
+- Context + hooks instead of XState — the state machine is small enough to read in one file.
+- Ledger persistence is AsyncStorage, not SQLite. Fine for one in-flight checkout.
+
+## What I would do with more time
+
+- Hosted mock (`msw` or a tiny Fastify) plus a recorded OpenAPI file.
+- Detox: background during sheet, kill during `processing`, assert a single `transactionId`.
+- 3-D Secure / step-up as a second redirect state.
+- SecureStore for the session, and a server-side unique constraint demo.
+- Accessibility pass (Dynamic Type, VoiceOver on the wallet buttons).
+
+## AI usage
+
+See [AI_USAGE.md](./AI_USAGE.md). Gametime asked for where/why AI was used and how outputs were challenged.
+
+## Tests
+
 ```bash
 npm test
 ```
 
-### Test Coverage Summary (27 / 27 Passed)
-- `cardValidator.test.ts`: Luhn algorithm checks, BIN brand detection, future expiry validation, Amex vs Visa CVC rules.
-- `eligibilityEngine.test.ts`: Apple Pay iOS rules, Google Pay Android rules, Affirm $100 threshold, environment overrides.
-- `mockPaymentApi.test.ts`: Fresh payments, idempotency key replays (double-charge prevention), card declines, status queries.
-- `e2eInstrumentation.test.ts`: Full end-to-end user journeys across Apple Pay, Affirm, Credit Card, app backgrounding recovery, and failure handling.
-
----
-
-## ⚖️ Tradeoffs & Future Enhancements
-
-### Tradeoffs Made
-1. **In-Memory Ledger vs Persistent DB**: The mock payment API uses an in-memory `Map` for idempotency tracking rather than a real Redis/PostgreSQL store.
-2. **Simplified Biometric Prompt**: Used React Native native modal overlays to simulate Apple/Google Pay sheets rather than requiring physical device credentials.
-
-### What I'd Do Differently With More Time
-1. **PassKit Native Bridge**: Implement direct Objective-C / Swift native module stubs (`PKPaymentAuthorizationViewControllerDelegate`) for deeper native sheet callbacks.
-2. **3D Secure / OTP Flow**: Add a simulated 2FA challenge step for European/SCA credit card compliance.
-3. **Offline Queueing**: Store pending ticket reservations in a local SQLite queue with automatic background sync when cell signal restores.
-
----
-
-## 🤖 AI Usage Documentation
-
-Per Gametime's assessment guidelines for AI-forward engineering:
-
-- **Where AI was used**:
-  - **Architecture & Boilerplate Generation**: Used AI to scaffold initial TypeScript domain types (`src/types/checkout.ts`), eligibility rules, and Jest unit test assertions.
-  - **Luhn Algorithm Optimization**: Prompted AI for an edge-case-safe Luhn Mod-10 implementation.
-  - **App Lifecycle State Machine Design**: Used AI to review edge cases for `AppState` transition handling with `AsyncStorage` persistence.
-- **Why AI was used**: Accelerated setup of boilerplate structures and test data generation, freeing focus for state machine resiliency, idempotency boundaries, and form UX details.
-- **How outputs were validated & challenged**:
-  - **Challenged Card Formatting**: AI initially suggested a simple 4-4-4-4 regex for card numbers. I manually revised it to support 4-6-5 formatting for American Express cards (`formatCardNumber`).
-  - **Challenged Idempotency Teardown**: AI suggested clearing the pending state key on app backgrounding. I corrected this logic so the key persists *through* backgrounding and is cleared only *after* server status verification, ensuring zero lost states on OS kill.
-  - **Empirical Test Verification**: Executed 27 automated unit and E2E instrumentation tests (`npm test`) to empirically verify all logic without relying on unvalidated assumptions.
+Covers eligibility (including the $100.00 vs $100.01 Affirm edge), Luhn/brand/expiry, tokenize-not-PAN, idempotent replay, 409 on key reuse, decline token, and processing-row-before-timeout.

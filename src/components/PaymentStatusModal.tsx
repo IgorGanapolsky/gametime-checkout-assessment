@@ -17,30 +17,45 @@ export const PaymentStatusModal: React.FC = () => {
     lastResponse,
     resetCheckout,
     isRecoveringFromInterruption,
+    expressSheet,
   } = useCheckout();
 
-  if (status === 'idle') {
+  const hidden =
+    status === 'idle' ||
+    status === 'awaiting_wallet' ||
+    status === 'awaiting_redirect' ||
+    Boolean(expressSheet);
+
+  if (hidden) {
     return null;
   }
 
-  const isProcessing = status === 'processing' || isRecoveringFromInterruption;
+  const isProcessing =
+    status === 'processing' ||
+    status === 'reconciling' ||
+    isRecoveringFromInterruption;
   const isSuccess = status === 'succeeded';
+  const isCancelled = status === 'cancelled';
   const isDeclined = status === 'declined' || status === 'failed';
 
   return (
-    <Modal visible={true} transparent animationType="fade">
+    <Modal visible transparent animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.card}>
           {isProcessing && (
             <>
               <ActivityIndicator size="large" color="#38BDF8" style={styles.spinner} />
-              <Text style={styles.title}>Processing Transaction</Text>
-              <Text style={styles.message}>{statusMessage || 'Communicating with payment gateway...'}</Text>
-              {activeIdempotencyKey && (
+              <Text style={styles.title}>
+                {status === 'reconciling' ? "We're checking" : 'Processing'}
+              </Text>
+              <Text style={styles.message}>
+                {statusMessage || 'Talking to the payment API…'}
+              </Text>
+              {activeIdempotencyKey ? (
                 <Text style={styles.idempotencyTag}>
-                  Key: {activeIdempotencyKey.slice(0, 24)}...
+                  idempotency {activeIdempotencyKey}
                 </Text>
-              )}
+              ) : null}
             </>
           )}
 
@@ -49,28 +64,33 @@ export const PaymentStatusModal: React.FC = () => {
               <View style={styles.iconCircleSuccess}>
                 <Text style={styles.iconText}>✓</Text>
               </View>
-              <Text style={styles.titleSuccess}>Order Confirmed!</Text>
+              <Text style={styles.titleSuccess}>Order confirmed</Text>
               <Text style={styles.message}>
-                {statusMessage || 'Your tickets have been issued.'}
+                {statusMessage || 'Tickets issued.'}
               </Text>
-
-              {lastResponse && (
+              {lastResponse ? (
                 <View style={styles.receiptBox}>
-                  <Text style={styles.receiptTitle}>RECEIPT PROOF</Text>
+                  <Text style={styles.receiptTitle}>API RECEIPT</Text>
+                  <Text style={styles.receiptRow}>id {lastResponse.transactionId}</Text>
                   <Text style={styles.receiptRow}>
-                    Txn ID: {lastResponse.transactionId}
-                  </Text>
-                  <Text style={styles.receiptRow}>
-                    Idempotency Replay: {lastResponse.wasIdempotentReplay ? 'YES (Cached)' : 'NO (Fresh)'}
-                  </Text>
-                  <Text style={styles.receiptRow}>
-                    Timestamp: {lastResponse.processedAt.slice(11, 19)}
+                    replay {lastResponse.wasIdempotentReplay ? 'yes' : 'no'}
                   </Text>
                 </View>
-              )}
-
+              ) : null}
               <TouchableOpacity style={styles.doneBtn} onPress={resetCheckout}>
-                <Text style={styles.doneBtnText}>View My Tickets</Text>
+                <Text style={styles.doneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {isCancelled && (
+            <>
+              <Text style={styles.title}>Cancelled</Text>
+              <Text style={styles.message}>
+                {statusMessage || 'Nothing was charged.'}
+              </Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={resetCheckout}>
+                <Text style={styles.retryBtnText}>Back to checkout</Text>
               </TouchableOpacity>
             </>
           )}
@@ -80,13 +100,12 @@ export const PaymentStatusModal: React.FC = () => {
               <View style={styles.iconCircleError}>
                 <Text style={styles.iconText}>✕</Text>
               </View>
-              <Text style={styles.titleError}>Payment Failed</Text>
+              <Text style={styles.titleError}>Payment failed</Text>
               <Text style={styles.message}>
-                {statusMessage || 'Your payment could not be processed.'}
+                {statusMessage || 'The charge did not go through.'}
               </Text>
-
               <TouchableOpacity style={styles.retryBtn} onPress={resetCheckout}>
-                <Text style={styles.retryBtnText}>Try Again</Text>
+                <Text style={styles.retryBtnText}>Try a different method</Text>
               </TouchableOpacity>
             </>
           )}
@@ -113,7 +132,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#334155',
-    elevation: 10,
   },
   spinner: {
     marginBottom: 16,
@@ -150,7 +168,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 10,
     fontFamily: 'monospace',
-    marginTop: 8,
   },
   iconCircleSuccess: {
     width: 60,
@@ -211,7 +228,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   retryBtn: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#334155',
     width: '100%',
     height: 48,
     borderRadius: 12,

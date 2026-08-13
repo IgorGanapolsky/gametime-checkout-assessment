@@ -7,16 +7,12 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useCheckout } from '../context/CheckoutContext';
-import { formatExpiry, formatCardNumber } from '../services/cardValidator';
+import { formatCardNumber } from '../services/cardValidator';
+import { dollarsFromCents } from '../types/checkout';
 
 export const CreditCardForm: React.FC = () => {
-  const {
-    cart,
-    cardData,
-    updateCardDetails,
-    processCardPayment,
-    status,
-  } = useCheckout();
+  const { cart, cardData, updateCardDetails, processCardPayment, status } =
+    useCheckout();
 
   const [touched, setTouched] = useState({
     number: false,
@@ -28,7 +24,7 @@ export const CreditCardForm: React.FC = () => {
   const [rawExpiry, setRawExpiry] = useState('');
   const [rawCvc, setRawCvc] = useState('');
 
-  const isProcessing = status === 'processing';
+  const busy = status !== 'idle' && status !== 'cancelled' && status !== 'declined' && status !== 'failed';
 
   const handleNumberChange = (text: string) => {
     const digits = text.replace(/\D/g, '');
@@ -37,7 +33,9 @@ export const CreditCardForm: React.FC = () => {
   };
 
   const handleExpiryChange = (text: string) => {
-    const formatted = formatExpiry(text);
+    const digits = text.replace(/\D/g, '').slice(0, 4);
+    const formatted =
+      digits.length >= 3 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
     setRawExpiry(formatted);
     updateCardDetails(rawNumber, formatted, rawCvc);
   };
@@ -48,26 +46,16 @@ export const CreditCardForm: React.FC = () => {
     updateCardDetails(rawNumber, rawExpiry, digits);
   };
 
-  const getBrandBadge = () => {
-    switch (cardData.cardBrand) {
-      case 'visa':
-        return <Text style={[styles.brandBadge, styles.visaBadge]}>VISA</Text>;
-      case 'mastercard':
-        return <Text style={[styles.brandBadge, styles.mcBadge]}>MC</Text>;
-      case 'amex':
-        return <Text style={[styles.brandBadge, styles.amexBadge]}>AMEX</Text>;
-      case 'discover':
-        return <Text style={[styles.brandBadge, styles.discBadge]}>DISC</Text>;
-      default:
-        return <Text style={styles.brandBadge}>CARD</Text>;
-    }
-  };
+  const brandLabel = cardData.cardBrand === 'unknown' ? 'CARD' : cardData.cardBrand.toUpperCase();
 
   return (
     <View style={styles.container}>
       <Text style={styles.sectionHeader}>CREDIT OR DEBIT CARD</Text>
+      <Text style={styles.hint}>
+        Test cards: 4242 4242 4242 4242 succeeds. 4000 0000 0000 0002 declines.
+        Never use a real PAN.
+      </Text>
 
-      {/* Card Number Input */}
       <View style={styles.fieldGroup}>
         <Text style={styles.fieldLabel}>Card Number</Text>
         <View
@@ -76,8 +64,8 @@ export const CreditCardForm: React.FC = () => {
             touched.number && !cardData.isValidCardNumber && rawNumber.length > 0
               ? styles.inputError
               : cardData.isValidCardNumber
-              ? styles.inputSuccess
-              : null,
+                ? styles.inputSuccess
+                : null,
           ]}
         >
           <TextInput
@@ -87,32 +75,37 @@ export const CreditCardForm: React.FC = () => {
             onBlur={() => setTouched((p) => ({ ...p, number: true }))}
             placeholder="4242 4242 4242 4242"
             placeholderTextColor="#64748B"
-            keyboardType="numeric"
+            keyboardType="number-pad"
             textContentType="creditCardNumber"
             autoComplete="cc-number"
-            maxLength={19}
-            editable={!isProcessing}
+            maxLength={cardData.cardBrand === 'amex' ? 17 : 19}
+            editable={!busy}
           />
-          {getBrandBadge()}
+          <Text
+            style={[
+              styles.brandBadge,
+              cardData.cardBrand !== 'unknown' && styles.brandKnown,
+            ]}
+          >
+            {brandLabel}
+          </Text>
         </View>
-        {touched.number && !cardData.isValidCardNumber && rawNumber.length > 0 && (
-          <Text style={styles.errorHint}>Invalid card number (Luhn check failed)</Text>
+        {touched.number && !cardData.isValidCardNumber && rawNumber.length > 12 && (
+          <Text style={styles.errorHint}>Fails Luhn or length for this brand</Text>
         )}
       </View>
 
-      {/* Expiry and CVC Row */}
       <View style={styles.row}>
-        {/* Expiry */}
         <View style={[styles.fieldGroup, { flex: 1, marginRight: 8 }]}>
-          <Text style={styles.fieldLabel}>Expires (MM/YY)</Text>
+          <Text style={styles.fieldLabel}>Expires</Text>
           <View
             style={[
               styles.inputWrapper,
               touched.expiry && !cardData.isValidExpiry && rawExpiry.length > 0
                 ? styles.inputError
                 : cardData.isValidExpiry
-                ? styles.inputSuccess
-                : null,
+                  ? styles.inputSuccess
+                  : null,
             ]}
           >
             <TextInput
@@ -122,20 +115,21 @@ export const CreditCardForm: React.FC = () => {
               onBlur={() => setTouched((p) => ({ ...p, expiry: true }))}
               placeholder="12/28"
               placeholderTextColor="#64748B"
-              keyboardType="numeric"
+              keyboardType="number-pad"
+              textContentType="creditCardExpiration"
+              autoComplete="cc-exp"
               maxLength={5}
-              editable={!isProcessing}
+              editable={!busy}
             />
           </View>
-          {touched.expiry && !cardData.isValidExpiry && rawExpiry.length > 0 && (
-            <Text style={styles.errorHint}>Invalid / expired date</Text>
+          {touched.expiry && !cardData.isValidExpiry && rawExpiry.length >= 5 && (
+            <Text style={styles.errorHint}>Must be a future month</Text>
           )}
         </View>
 
-        {/* CVC */}
         <View style={[styles.fieldGroup, { flex: 1, marginLeft: 8 }]}>
           <Text style={styles.fieldLabel}>
-            Security Code ({cardData.cardBrand === 'amex' ? '4 digits' : '3 digits'})
+            CVC {cardData.cardBrand === 'amex' ? '(4)' : '(3)'}
           </Text>
           <View
             style={[
@@ -143,8 +137,8 @@ export const CreditCardForm: React.FC = () => {
               touched.cvc && !cardData.isValidCvc && rawCvc.length > 0
                 ? styles.inputError
                 : cardData.isValidCvc
-                ? styles.inputSuccess
-                : null,
+                  ? styles.inputSuccess
+                  : null,
             ]}
           >
             <TextInput
@@ -154,32 +148,28 @@ export const CreditCardForm: React.FC = () => {
               onBlur={() => setTouched((p) => ({ ...p, cvc: true }))}
               placeholder={cardData.cardBrand === 'amex' ? '1234' : '123'}
               placeholderTextColor="#64748B"
-              keyboardType="numeric"
+              keyboardType="number-pad"
+              textContentType="creditCardSecurityCode"
+              autoComplete="cc-csc"
               secureTextEntry
               maxLength={cardData.cardBrand === 'amex' ? 4 : 3}
-              editable={!isProcessing}
+              editable={!busy}
             />
           </View>
-          {touched.cvc && !cardData.isValidCvc && rawCvc.length > 0 && (
-            <Text style={styles.errorHint}>Invalid CVC length</Text>
-          )}
         </View>
       </View>
 
-      {/* Submit Button */}
       <TouchableOpacity
         style={[
           styles.submitBtn,
-          (!cardData.isComplete || isProcessing) && styles.submitBtnDisabled,
+          (!cardData.isComplete || busy) && styles.submitBtnDisabled,
         ]}
         onPress={processCardPayment}
-        disabled={!cardData.isComplete || isProcessing}
+        disabled={!cardData.isComplete || busy}
         activeOpacity={0.8}
       >
         <Text style={styles.submitBtnText}>
-          {isProcessing
-            ? 'Authorizing Card...'
-            : `Pay $${cart.total.toFixed(2)}`}
+          {busy ? 'Authorizing…' : `Pay $${dollarsFromCents(cart.totalCents)}`}
         </Text>
       </TouchableOpacity>
     </View>
@@ -199,6 +189,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.2,
+    marginBottom: 8,
+  },
+  hint: {
+    color: '#64748B',
+    fontSize: 11,
+    lineHeight: 16,
     marginBottom: 14,
   },
   fieldGroup: {
@@ -245,20 +241,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     overflow: 'hidden',
   },
-  visaBadge: {
+  brandKnown: {
     backgroundColor: '#1E40AF',
-    color: '#FFFFFF',
-  },
-  mcBadge: {
-    backgroundColor: '#C2410C',
-    color: '#FFFFFF',
-  },
-  amexBadge: {
-    backgroundColor: '#047857',
-    color: '#FFFFFF',
-  },
-  discBadge: {
-    backgroundColor: '#B45309',
     color: '#FFFFFF',
   },
   errorHint: {

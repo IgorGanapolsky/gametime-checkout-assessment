@@ -1,119 +1,101 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
 import { evaluateEligibility } from '../services/eligibilityEngine';
-import { parseAndValidateCard } from '../services/cardValidator';
-import { mockPaymentApi } from '../services/mockPaymentApi';
+import { parseAndValidateCard, tokenizeCard } from '../services/cardValidator';
+import { MockPaymentBackend } from '../services/mockPaymentApi';
 
-describe('Gametime Checkout Full E2E Flow Instrumentation', () => {
+describe('instrumented checkout paths', () => {
+  let api: MockPaymentBackend;
+
   beforeEach(() => {
-    mockPaymentApi.clearLedger();
+    api = new MockPaymentBackend();
   });
 
-  it('E2E Flow 1: Express Apple Pay Single-Tap Checkout on iOS', async () => {
-    const device = {
-      platform: 'ios' as const,
-      hasApplePayCardProvisioned: true,
-      hasGooglePaySetup: false,
-    };
-    const rules = evaluateEligibility(device, 370.5);
+  it('Apple Pay eligibility + single express charge', async () => {
+    const rules = evaluateEligibility(
+      { platform: 'ios', hasApplePayCardProvisioned: true, hasGooglePaySetup: false },
+      17_780
+    );
     expect(rules.applePayAvailable).toBe(true);
 
-    const idempotencyKey = `e2e_apple_pay_${Date.now()}`;
-    const response = await mockPaymentApi.processPayment({
-      idempotencyKey,
+    const res = await api.processPayment({
+      idempotencyKey: 'e2e_apple',
+      orderId: 'ord_1',
       paymentMethod: 'apple_pay',
-      amount: 370.5,
-      currency: 'USD',
+      amountCents: 17780,
+      currency: 'usd',
+      paymentMethodToken: 'tok_express_apple_pay',
     });
-
-    expect(response.success).toBe(true);
-    expect(response.status).toBe('captured');
-    expect(response.transactionId).toMatch(/^txn_gt_/);
+    expect(res.success).toBe(true);
+    expect(res.transactionId).toBe('pay_e2e_appl_17780');
   });
 
-  it('E2E Flow 2: Express Affirm BNPL Checkout when total > $100', async () => {
-    const device = {
-      platform: 'android' as const,
-      hasApplePayCardProvisioned: false,
-      hasGooglePaySetup: true,
-    };
-    const rules = evaluateEligibility(device, 150.0);
-    expect(rules.affirmAvailable).toBe(true);
+  it('Affirm only when total is over $100, then charges', async () => {
+    const hidden = evaluateEligibility(
+      { platform: 'android', hasApplePayCardProvisioned: false, hasGooglePaySetup: true },
+      9090
+    );
+    const shown = evaluateEligibility(
+      { platform: 'android', hasApplePayCardProvisioned: false, hasGooglePaySetup: true },
+      17780
+    );
+    expect(hidden.affirmAvailable).toBe(false);
+    expect(shown.affirmAvailable).toBe(true);
 
-    const idempotencyKey = `e2e_affirm_${Date.now()}`;
-    const response = await mockPaymentApi.processPayment({
-      idempotencyKey,
+    const res = await api.processPayment({
+      idempotencyKey: 'e2e_affirm',
+      orderId: 'ord_1',
       paymentMethod: 'affirm',
-      amount: 150.0,
-      currency: 'USD',
+      amountCents: 17780,
+      currency: 'usd',
+      paymentMethodToken: 'tok_express_affirm',
     });
-
-    expect(response.success).toBe(true);
-    expect(response.status).toBe('captured');
+    expect(res.status).toBe('captured');
   });
 
-  it('E2E Flow 3: Credit Card Checkout with Luhn, Expiry, and CVC Validation', async () => {
-    const validCard = parseAndValidateCard('4242424242424242', '12/28', '123');
-    expect(validCard.isComplete).toBe(true);
+  it('valid card tokenizes and charges without sending a PAN', async () => {
+    const card = parseAndValidateCard('4242424242424242', '12/28', '123', new Date('2026-08-13'));
+    expect(card.isComplete).toBe(true);
+    const token = tokenizeCard(card.cardNumber, card.cardBrand);
+    expect(token).toBe('tok_visa_4242');
 
-    const idempotencyKey = `e2e_card_${Date.now()}`;
-    const response = await mockPaymentApi.processPayment({
-      idempotencyKey,
+    const res = await api.processPayment({
+      idempotencyKey: 'e2e_card',
+      orderId: 'ord_1',
       paymentMethod: 'credit_card',
-      amount: 85.0,
-      currency: 'USD',
-      cardDetails: {
-        lastFour: validCard.cardNumber.slice(-4),
-        brand: validCard.cardBrand,
-        expMonth: validCard.expiryMonth,
-        expYear: validCard.expiryYear,
-      },
+      amountCents: 9090,
+      currency: 'usd',
+      paymentMethodToken: token,
     });
-
-    expect(response.success).toBe(true);
-    expect(response.status).toBe('captured');
+    expect(res.success).toBe(true);
   });
 
-  it('E2E Flow 4: App Lifecycle Interruption & Idempotency Recovery (No Double Charging)', async () => {
-    const idempotencyKey = `e2e_interrupted_key_777`;
-
-    // 1. Initial attempt before backgrounding
-    const firstCall = await mockPaymentApi.processPayment({
-      idempotencyKey,
-      paymentMethod: 'apple_pay',
-      amount: 200.0,
-      currency: 'USD',
-    });
-    expect(firstCall.success).toBe(true);
-
-    // 2. App was backgrounded mid-flow or force-quit and relaunched.
-    // Querying existing status with idempotency key:
-    const recoveredStatus = await mockPaymentApi.queryPaymentStatus(idempotencyKey);
-    expect(recoveredStatus).not.toBeNull();
-    expect(recoveredStatus?.success).toBe(true);
-
-    // 3. Retry dispatch with same idempotency key returns exact same transaction ID and marks replay
-    const retryCall = await mockPaymentApi.processPayment({
-      idempotencyKey,
-      paymentMethod: 'apple_pay',
-      amount: 200.0,
-      currency: 'USD',
-    });
-    expect(retryCall.transactionId).toEqual(firstCall.transactionId);
-    expect(retryCall.wasIdempotentReplay).toBe(true);
+  it('kill/relaunch replays the same idempotency key', async () => {
+    const req = {
+      idempotencyKey: 'e2e_interrupt',
+      orderId: 'ord_1',
+      paymentMethod: 'apple_pay' as const,
+      amountCents: 17780,
+      currency: 'usd' as const,
+      paymentMethodToken: 'tok_express_apple_pay',
+    };
+    const first = await api.processPayment(req);
+    const recovered = await api.queryPaymentStatus('e2e_interrupt');
+    const retry = await api.processPayment(req);
+    expect(recovered?.transactionId).toEqual(first.transactionId);
+    expect(retry.transactionId).toEqual(first.transactionId);
+    expect(retry.wasIdempotentReplay).toBe(true);
   });
 
-  it('E2E Flow 5: Handling Declined Card Error Recovery', async () => {
-    const idempotencyKey = `e2e_decline_key_888`;
-    const response = await mockPaymentApi.processPayment({
-      idempotencyKey,
+  it('declined card stays declined on GET', async () => {
+    const res = await api.processPayment({
+      idempotencyKey: 'e2e_decline',
+      orderId: 'ord_1',
       paymentMethod: 'credit_card',
-      amount: 100.0,
-      currency: 'USD',
-      simulateFailureMode: 'declined',
-    } as any);
-
-    expect(response.success).toBe(false);
-    expect(response.status).toBe('declined');
-    expect(response.errorMessage).toContain('Card declined');
+      amountCents: 9090,
+      currency: 'usd',
+      paymentMethodToken: 'tok_visa_declined',
+    });
+    expect(res.status).toBe('declined');
+    const again = await api.queryPaymentStatus('e2e_decline');
+    expect(again?.status).toBe('declined');
   });
 });
