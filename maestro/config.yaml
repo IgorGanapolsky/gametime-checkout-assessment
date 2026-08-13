@@ -1,0 +1,4 @@
+appId: com.igorganapolsky.gametimemobilecheckout
+flows:
+  - checkout-affirm-eligibility.yaml
+  - checkout-card-success.yaml

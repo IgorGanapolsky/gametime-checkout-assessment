@@ -1,4 +1,4 @@
-appId: host.exp.Exponent
+appId: com.igorganapolsky.gametimemobilecheckout
 name: Affirm appears after qty crosses $100
 ---
 - launchApp
