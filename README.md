@@ -4,6 +4,15 @@ React Native (Expo) checkout for the Staff Mobile Engineer take-home.
 
 A fan has already picked seats. This screen decides **which payment methods they are allowed to see**, makes **express pay actually express**, keeps **card entry honest**, and talks to a **mock payment API** whose contract is designed so a kill/relaunch cannot double-charge.
 
+## Physical-device preview
+
+<p align="center">
+  <img src="evidence/native-device-checkout.png" alt="Gametime checkout running on a physical Samsung Galaxy S25" width="320" />
+  <img src="evidence/real-device-s25-checkout.png" alt="Gametime express and card checkout on a physical Android device" width="320" />
+</p>
+
+Both screenshots are from the standalone Android build running on a physical Samsung Galaxy S25. The device flow exposes Google Pay, keeps Affirm hidden below $100, and provides the Review Lab for deterministic eligibility and failure-path review.
+
 Deadline context: assignment email received **2026-08-12 (Wednesday)**; submit by **2026-08-17**.
 
 ## What I built
