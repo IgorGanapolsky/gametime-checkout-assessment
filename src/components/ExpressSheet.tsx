@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useCheckout } from '../context/CheckoutContext';
 import { dollarsFromCents } from '../types/checkout';
+import { TEST_IDS } from '../testing/testIds';
 
 export function ExpressSheet() {
   const { expressSheet, cart, confirmExpressSheet, cancelExpressSheet } =
@@ -30,12 +31,20 @@ export function ExpressSheet() {
               : 'This stands in for the native wallet sheet + biometric prompt. Backgrounding here is expected. Pay completes the charge immediately.'}
           </Text>
           <Text style={styles.amount}>${dollarsFromCents(cart.totalCents)}</Text>
-          <TouchableOpacity style={styles.pay} onPress={confirmExpressSheet}>
+          <TouchableOpacity
+            testID={TEST_IDS.sheetPay}
+            style={styles.pay}
+            onPress={confirmExpressSheet}
+          >
             <Text style={styles.payText}>
               {isAffirm ? 'Continue with Affirm' : `Pay with ${title}`}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.cancel} onPress={cancelExpressSheet}>
+          <TouchableOpacity
+            testID={TEST_IDS.sheetCancel}
+            style={styles.cancel}
+            onPress={cancelExpressSheet}
+          >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         </View>

@@ -42,11 +42,13 @@
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "test:e2e": "jest src/__tests__/checkoutController.e2e.test.ts src/__tests__/e2eInstrumentation.test.ts src/__tests__/testIds.instrumentation.test.ts",
+    "test:maestro": "maestro test maestro/checkout-affirm-eligibility.yaml maestro/checkout-card-success.yaml"
   },
   "private": true
 }

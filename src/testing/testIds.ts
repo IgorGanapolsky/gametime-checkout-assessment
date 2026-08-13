@@ -1,0 +1,22 @@
+/** Stable selectors for Jest instrumentation and Maestro. */
+export const TEST_IDS = {
+  screen: 'checkout-screen',
+  orderTotal: 'order-total',
+  qtyInc: 'order-qty-inc',
+  qtyDec: 'order-qty-dec',
+  qtyValue: 'order-qty-value',
+  affirmHint: 'order-affirm-hint',
+  expressApple: 'express-apple-pay',
+  expressGoogle: 'express-google-pay',
+  expressAffirm: 'express-affirm',
+  expressEmpty: 'express-empty',
+  cardNumber: 'input-card-number',
+  cardExpiry: 'input-card-expiry',
+  cardCvc: 'input-card-cvc',
+  cardSubmit: 'card-submit',
+  sheetPay: 'express-sheet-pay',
+  sheetCancel: 'express-sheet-cancel',
+  reviewLabOpen: 'review-lab-open',
+  statusTitle: 'payment-status-title',
+  statusDone: 'payment-status-done',
+} as const;

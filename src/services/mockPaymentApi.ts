@@ -42,6 +42,14 @@ function delay(ms: number): Promise<void> {
  */
 export class MockPaymentBackend {
   private ledger = new Map<string, LedgerRecord>();
+  private readonly latencyMs: number;
+  private readonly queryLatencyMs: number;
+  onLedgerChange?: () => void | Promise<void>;
+
+  constructor(opts: { latencyMs?: number; queryLatencyMs?: number } = {}) {
+    this.latencyMs = opts.latencyMs ?? 0;
+    this.queryLatencyMs = opts.queryLatencyMs ?? 0;
+  }
 
   hydrate(records: Array<{ key: string; record: LedgerRecord }>): void {
     this.ledger.clear();
@@ -89,8 +97,11 @@ export class MockPaymentBackend {
       fingerprint: requestFingerprint(request),
       response: processing,
     });
+    if (this.onLedgerChange) {
+      await this.onLedgerChange();
+    }
 
-    const waitMs = request.simulateSlowNetwork ? 2500 : 700;
+    const waitMs = request.simulateSlowNetwork ? 2500 : this.latencyMs;
     await delay(waitMs);
 
     if (request.simulateFailureMode === 'network_error') {
@@ -103,11 +114,14 @@ export class MockPaymentBackend {
       fingerprint: requestFingerprint(request),
       response: terminal,
     });
+    if (this.onLedgerChange) {
+      await this.onLedgerChange();
+    }
     return JSON.parse(JSON.stringify(terminal)) as PaymentResponse;
   }
 
   async queryPaymentStatus(idempotencyKey: string): Promise<PaymentResponse | null> {
-    await delay(180);
+    await delay(this.queryLatencyMs);
     const record = this.ledger.get(idempotencyKey);
     return record
       ? (JSON.parse(JSON.stringify(record.response)) as PaymentResponse)

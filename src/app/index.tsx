@@ -6,10 +6,11 @@ import { CreditCardForm } from '../components/CreditCardForm';
 import { DevSimulatorDrawer } from '../components/DevSimulatorDrawer';
 import { PaymentStatusModal } from '../components/PaymentStatusModal';
 import { ExpressSheet } from '../components/ExpressSheet';
+import { TEST_IDS } from '../testing/testIds';
 
 export default function CheckoutScreen() {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} testID={TEST_IDS.screen}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.contentContainer}

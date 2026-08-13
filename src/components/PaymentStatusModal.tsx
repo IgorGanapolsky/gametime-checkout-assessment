@@ -8,6 +8,7 @@ import {
   Modal,
 } from 'react-native';
 import { useCheckout } from '../context/CheckoutContext';
+import { TEST_IDS } from '../testing/testIds';
 
 export const PaymentStatusModal: React.FC = () => {
   const {
@@ -64,7 +65,9 @@ export const PaymentStatusModal: React.FC = () => {
               <View style={styles.iconCircleSuccess}>
                 <Text style={styles.iconText}>✓</Text>
               </View>
-              <Text style={styles.titleSuccess}>Order confirmed</Text>
+              <Text style={styles.titleSuccess} testID={TEST_IDS.statusTitle}>
+                Order confirmed
+              </Text>
               <Text style={styles.message}>
                 {statusMessage || 'Tickets issued.'}
               </Text>
@@ -77,7 +80,11 @@ export const PaymentStatusModal: React.FC = () => {
                   </Text>
                 </View>
               ) : null}
-              <TouchableOpacity style={styles.doneBtn} onPress={resetCheckout}>
+              <TouchableOpacity
+                testID={TEST_IDS.statusDone}
+                style={styles.doneBtn}
+                onPress={resetCheckout}
+              >
                 <Text style={styles.doneBtnText}>Done</Text>
               </TouchableOpacity>
             </>

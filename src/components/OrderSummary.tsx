@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useCheckout } from '../context/CheckoutContext';
 import { dollarsFromCents } from '../types/checkout';
+import { TEST_IDS } from '../testing/testIds';
 
 export const OrderSummary: React.FC = () => {
   const { cart, setQuantity, status, eligibility } = useCheckout();
@@ -24,14 +25,18 @@ export const OrderSummary: React.FC = () => {
         <Text style={styles.qtyLabel}>Tickets ({item.quantity})</Text>
         <View style={styles.qtyControls}>
           <TouchableOpacity
+            testID={TEST_IDS.qtyDec}
             style={[styles.qtyBtn, (item.quantity <= 1 || isLocked) && styles.disabledBtn]}
             onPress={() => setQuantity(item.quantity - 1)}
             disabled={item.quantity <= 1 || isLocked}
           >
             <Text style={styles.qtyBtnText}>-</Text>
           </TouchableOpacity>
-          <Text style={styles.qtyCount}>{item.quantity}</Text>
+          <Text style={styles.qtyCount} testID={TEST_IDS.qtyValue}>
+            {item.quantity}
+          </Text>
           <TouchableOpacity
+            testID={TEST_IDS.qtyInc}
             style={[styles.qtyBtn, isLocked && styles.disabledBtn]}
             onPress={() => setQuantity(item.quantity + 1)}
             disabled={isLocked}
@@ -41,7 +46,7 @@ export const OrderSummary: React.FC = () => {
         </View>
       </View>
 
-      <Text style={styles.affirmHint}>
+      <Text style={styles.affirmHint} testID={TEST_IDS.affirmHint}>
         Affirm {eligibility.affirmAvailable ? 'is' : 'is not'} available
         {' '}(shown only when total is over $100). Qty 1 stays under; qty 2 crosses.
       </Text>
@@ -67,7 +72,9 @@ export const OrderSummary: React.FC = () => {
 
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>Total Due</Text>
-        <Text style={styles.totalValue}>${dollarsFromCents(cart.totalCents)}</Text>
+        <Text style={styles.totalValue} testID={TEST_IDS.orderTotal}>
+          ${dollarsFromCents(cart.totalCents)}
+        </Text>
       </View>
     </View>
   );

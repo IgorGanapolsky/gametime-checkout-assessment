@@ -136,10 +136,24 @@ A local in-flight request is not overwritten by AppState recovery (that race is 
 
 See [AI_USAGE.md](./AI_USAGE.md). Gametime asked for where/why AI was used and how outputs were challenged.
 
-## Tests
+## Tests (TDD + e2e instrumentation)
 
 ```bash
-npm test
+npm test          # Jest: domain + CheckoutController e2e + testID contract
+npm run test:e2e  # controller + instrumentation only
 ```
 
-Covers eligibility (including the $100.00 vs $100.01 Affirm edge), Luhn/brand/expiry, tokenize-not-PAN, idempotent replay, 409 on key reuse, decline token, and processing-row-before-timeout.
+TDD: `cart.test.ts` and `checkoutController.e2e.test.ts` were written first (they failed on missing modules), then `CheckoutController` / `cart` / `MemoryKv` were implemented until green.
+
+The controller suite is the fail-closed **full e2e of payment state** (no RN renderer):
+
+- hide Apple Pay without Wallet; card still charges
+- express is one interaction (sheet confirm charges; cancel writes no ledger row)
+- Affirm appears only after qty crosses $100
+- qty locked in flight
+- decline token then new key succeeds
+- kill mid-`processing` + rehydrate GET-replays one ledger row
+- 504 stays on the same idempotency key
+- incomplete card never hits the API
+
+Device instrumentation: `maestro/` (testIDs from `src/testing/testIds.ts`). See `maestro/README.md`. Maestro on a booted sim is complementary; Jest controller e2e is the gate.

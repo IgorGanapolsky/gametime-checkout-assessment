@@ -9,6 +9,7 @@ import {
 import { useCheckout } from '../context/CheckoutContext';
 import { formatCardNumber } from '../services/cardValidator';
 import { dollarsFromCents } from '../types/checkout';
+import { TEST_IDS } from '../testing/testIds';
 
 export const CreditCardForm: React.FC = () => {
   const { cart, cardData, updateCardDetails, processCardPayment, status } =
@@ -69,6 +70,7 @@ export const CreditCardForm: React.FC = () => {
           ]}
         >
           <TextInput
+            testID={TEST_IDS.cardNumber}
             style={styles.textInput}
             value={formatCardNumber(rawNumber, cardData.cardBrand)}
             onChangeText={handleNumberChange}
@@ -109,6 +111,7 @@ export const CreditCardForm: React.FC = () => {
             ]}
           >
             <TextInput
+              testID={TEST_IDS.cardExpiry}
               style={styles.textInput}
               value={rawExpiry}
               onChangeText={handleExpiryChange}
@@ -142,6 +145,8 @@ export const CreditCardForm: React.FC = () => {
             ]}
           >
             <TextInput
+              testID={TEST_IDS.cardCvc}
+              accessibilityLabel="CVC input"
               style={styles.textInput}
               value={rawCvc}
               onChangeText={handleCvcChange}
@@ -160,6 +165,7 @@ export const CreditCardForm: React.FC = () => {
       </View>
 
       <TouchableOpacity
+        testID={TEST_IDS.cardSubmit}
         style={[
           styles.submitBtn,
           (!cardData.isComplete || busy) && styles.submitBtnDisabled,

@@ -11,6 +11,7 @@ import {
 import { useEnvironment } from '../context/EnvironmentContext';
 import { resetAllPaymentState, useCheckout } from '../context/CheckoutContext';
 import { WalletOverride } from '../types/checkout';
+import { TEST_IDS } from '../testing/testIds';
 
 export const DevSimulatorDrawer: React.FC = () => {
   const {
@@ -34,6 +35,7 @@ export const DevSimulatorDrawer: React.FC = () => {
   return (
     <>
       <TouchableOpacity
+        testID={TEST_IDS.reviewLabOpen}
         style={styles.fabTrigger}
         onPress={() => setDevDrawerOpen(true)}
         activeOpacity={0.8}

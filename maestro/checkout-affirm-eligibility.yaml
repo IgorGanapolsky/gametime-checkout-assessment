@@ -1,0 +1,12 @@
+appId: host.exp.Exponent
+name: Affirm appears after qty crosses $100
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: order-affirm-hint
+    timeout: 30000
+- assertVisible: "is not available"
+- tapOn:
+    id: order-qty-inc
+- assertVisible: "is available"

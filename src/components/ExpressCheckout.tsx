@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useCheckout } from '../context/CheckoutContext';
 import { dollarsFromCents } from '../types/checkout';
+import { TEST_IDS } from '../testing/testIds';
 
 export const ExpressCheckout: React.FC = () => {
   const { cart, eligibility, beginExpressPayment, status } = useCheckout();
@@ -14,7 +15,7 @@ export const ExpressCheckout: React.FC = () => {
 
   if (!hasAnyExpress) {
     return (
-      <View style={styles.emptyContainer}>
+      <View style={styles.emptyContainer} testID={TEST_IDS.expressEmpty}>
         <Text style={styles.emptyTitle}>No express methods for this fan</Text>
         <Text style={styles.emptySub}>
           Apple Pay / Google Pay stay hidden unless the platform and wallet
@@ -33,6 +34,7 @@ export const ExpressCheckout: React.FC = () => {
 
       {eligibility.applePayAvailable && (
         <TouchableOpacity
+          testID={TEST_IDS.expressApple}
           style={[styles.expressBtn, styles.applePayBtn, busy && styles.btnDisabled]}
           onPress={() => beginExpressPayment('apple_pay')}
           disabled={busy}
@@ -44,6 +46,7 @@ export const ExpressCheckout: React.FC = () => {
 
       {eligibility.googlePayAvailable && (
         <TouchableOpacity
+          testID={TEST_IDS.expressGoogle}
           style={[styles.expressBtn, styles.googlePayBtn, busy && styles.btnDisabled]}
           onPress={() => beginExpressPayment('google_pay')}
           disabled={busy}
@@ -55,6 +58,7 @@ export const ExpressCheckout: React.FC = () => {
 
       {eligibility.affirmAvailable && (
         <TouchableOpacity
+          testID={TEST_IDS.expressAffirm}
           style={[styles.expressBtn, styles.affirmBtn, busy && styles.btnDisabled]}
           onPress={() => beginExpressPayment('affirm')}
           disabled={busy}
