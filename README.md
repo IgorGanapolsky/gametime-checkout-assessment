@@ -33,7 +33,7 @@ Then:
 - Android emulator: `a`
 - Expo Go on a device: scan the QR (same LAN)
 
-**Tested:** `npm test` on Node 22 (macOS). App starts with Expo SDK 57. Simulator/emulator is enough — no paid Apple Developer account, no real Apple Pay / Google Pay / Affirm credentials.
+**Tested:** Node 22 on macOS, Expo SDK 57, and a standalone debug build on a physical Samsung Galaxy S25 (`SM-S931U1`). The final gate is 61/61 Jest tests, clean ESLint, clean TypeScript, successful Android export, and a passing Google Pay express flow on the physical device. No real payment credentials are used.
 
 On first launch in the iOS Simulator you should **not** see Apple Pay. That is the honest default: simulators do not have a provisioned Wallet card. Open **REVIEW LAB** (bottom right) → platform `iOS` → cycle **Apple Pay provisioned** to `true`.
 
@@ -157,3 +157,5 @@ The controller suite is the fail-closed **full e2e of payment state** (no RN ren
 - incomplete card never hits the API
 
 Device instrumentation: `maestro/` (testIDs from `src/testing/testIds.ts`). See `maestro/README.md`. Maestro on a booted sim is complementary; Jest controller e2e is the gate.
+
+Physical-device screenshots are checked in under `evidence/`. Local Maestro receipts are intentionally ignored because they contain machine-specific paths; the reproducible flows live in `.maestro/`.
