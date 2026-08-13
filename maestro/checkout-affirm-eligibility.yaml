@@ -1,12 +1,37 @@
 appId: host.exp.exponent
 name: Affirm appears after qty crosses $100
 ---
-- launchApp
+- openLink: exp://127.0.0.1:8082
 - extendedWaitUntil:
     visible:
+      id: checkout-screen
+    timeout: 60000
+- tapOn:
+    id: review-lab-open
+- scrollUntilVisible:
+    element:
+      id: review-lab-reset
+    direction: DOWN
+- tapOn:
+    id: review-lab-reset
+- tapOn:
+    id: review-lab-close
+- scrollUntilVisible:
+    element:
       id: order-affirm-hint
-    timeout: 30000
-- assertVisible: "is not available"
+    direction: UP
+- assertVisible:
+    id: order-affirm-hint
+- assertNotVisible:
+    id: express-affirm
 - tapOn:
     id: order-qty-inc
-- assertVisible: "is available"
+- scrollUntilVisible:
+    element:
+      id: express-affirm
+    direction: DOWN
+- assertVisible:
+    id: express-affirm
+- assertNotVisible: "Cannot connect to Expo CLI"
+- assertNotVisible: "Uncaught.*promise"
+- takeScreenshot: checkout-affirm-eligibility

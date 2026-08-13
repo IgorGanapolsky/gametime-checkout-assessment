@@ -2,7 +2,7 @@
 
 Date: 2026-08-13 (Thursday, America/New_York)
 
-I used Grok (xAI) as a pair-programmer inside an existing Expo 57 scaffold. I did **not** paste the assignment into a model and ship the first draft.
+I used Grok (xAI) and Codex as pair-programmers inside an existing Expo 57 scaffold, with independent read-only agent reviews for coordination and device coverage. I did **not** paste the assignment into a model and ship the first draft.
 
 ## Where
 
@@ -11,6 +11,7 @@ I used Grok (xAI) as a pair-programmer inside an existing Expo 57 scaffold. I di
 | Domain types + eligibility | First-pass rules table | Spec re-read: Affirm is **over** $100, not `>=`; Apple Pay is not “iOS ⇒ show”. Locked with Jest. |
 | Card helpers | Luhn + brand formatting | Compared against known test PANs (`4242…`, Amex 15). Rejected an earlier expiry formatter that produced `MM/`. |
 | Mock API | Idempotency sketch | Rejected `Date.now()` keys and “clear pending in `finally` then recover on every `AppState` active” — that combination double-charges. Replaced with persist-before-POST, processing row, GET on relaunch. |
+| Device debugging | Log and test-plan review | Rejected service-only tests as device E2E. Added stable UI selectors and a five-flow Maestro suite with force-stop/relaunch; the final serialized physical Samsung run passed all five flows in 4m23s. |
 | UI scaffold | Layout / Review Lab | Kept eligibility/lifecycle logic out of presentational components. |
 | README | Structure | Rewrote from the spec’s submission bullets, not from the Expo starter README. |
 
@@ -21,9 +22,11 @@ I used Grok (xAI) as a pair-programmer inside an existing Expo 57 scaffold. I di
 - Generating a new idempotency key on every tap / every resume.
 - Treating “ledger miss after kill” as success.
 - A `$165 × 2` cart that could never drop under the Affirm threshold, so the qty question was untestable.
+- A physical-device heuristic that treated every Android phone as Google Pay ready.
+- A fake “simulate kill” label that only called reconciliation without stopping the process.
 
 ## What I did not use AI for
 
 - Inventing that a real Wallet was provisioned on the simulator.
 - Real Apple Pay / Google Pay / Affirm sandbox credentials (forbidden by the brief).
-- Claiming the app was tested on hardware it was not.
+- Claiming device coverage from a Jest controller test or from a failed Maestro run.

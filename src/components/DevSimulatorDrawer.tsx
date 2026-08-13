@@ -53,7 +53,10 @@ export const DevSimulatorDrawer: React.FC = () => {
           <View style={styles.drawerContainer}>
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Review Lab</Text>
-              <TouchableOpacity testID={TEST_IDS.reviewLabClose} onPress={() => setDevDrawerOpen(false)}>
+              <TouchableOpacity
+                testID={TEST_IDS.reviewLabClose}
+                onPress={() => setDevDrawerOpen(false)}
+              >
                 <Text style={styles.closeText}>Close</Text>
               </TouchableOpacity>
             </View>
@@ -141,7 +144,7 @@ export const DevSimulatorDrawer: React.FC = () => {
               ).map((mode) => (
                 <TouchableOpacity
                   key={mode.id}
-                  testID={`review-lab-fail-${mode.id}`}
+                  testID={`review-lab-failure-${mode.id}`}
                   style={[
                     styles.failModeBtn,
                     override.forceFailureMode === mode.id && styles.failModeBtnActive,
@@ -160,8 +163,9 @@ export const DevSimulatorDrawer: React.FC = () => {
               ))}
 
               <View style={styles.switchRow}>
-                <Text style={styles.switchLabel}>Slow network (2.5s)</Text>
+                <Text style={styles.switchLabel}>Slow network (8s)</Text>
                 <Switch
+                  testID={TEST_IDS.reviewLabSlowNetwork}
                   value={override.simulateSlowNetwork}
                   onValueChange={(val) => updateOverride({ simulateSlowNetwork: val })}
                 />
@@ -175,7 +179,7 @@ export const DevSimulatorDrawer: React.FC = () => {
                   await simulateKillRelaunch();
                 }}
               >
-                <Text style={styles.actionBtnText}>Simulate kill + relaunch</Text>
+                <Text style={styles.actionBtnText}>Reconcile persisted attempt</Text>
               </TouchableOpacity>
 
               <TouchableOpacity

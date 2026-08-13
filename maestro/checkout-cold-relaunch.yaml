@@ -1,7 +1,14 @@
 appId: host.exp.exponent
-name: Card happy path
+name: Slow accepted charge survives force-stop and relaunch
 ---
 - openLink: exp://127.0.0.1:8082
+- tapOn:
+    text: "Igor Ganapolsky"
+    optional: true
+- openLink: exp://127.0.0.1:8082
+- tapOn:
+    id: payment-status-done
+    optional: true
 - extendedWaitUntil:
     visible:
       id: checkout-screen
@@ -14,6 +21,18 @@ name: Card happy path
     direction: DOWN
 - tapOn:
     id: review-lab-reset
+- scrollUntilVisible:
+    element:
+      id: review-lab-failure-network-error
+    direction: UP
+- tapOn:
+    id: review-lab-failure-network-error
+- scrollUntilVisible:
+    element:
+      id: review-lab-slow-network
+    direction: DOWN
+- tapOn:
+    id: review-lab-slow-network
 - tapOn:
     id: review-lab-close
 - scrollUntilVisible:
@@ -48,12 +67,31 @@ name: Card happy path
     id: card-submit
 - extendedWaitUntil:
     visible:
-      id: payment-status-title
-    timeout: 15000
-- assertVisible: "Order confirmed"
+      id: payment-idempotency-key
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: payment-ledger-count
+      text: "1"
+    timeout: 10000
+- copyTextFrom:
+    id: payment-idempotency-key
+- evalScript: ${output.paymentKey = maestro.copiedText}
+- stopApp
+- openLink: exp://127.0.0.1:8082
+- tapOn:
+    text: "Igor Ganapolsky"
+    optional: true
+- openLink: exp://127.0.0.1:8082
+- extendedWaitUntil:
+    visible: "Order confirmed"
+    timeout: 20000
+- assertVisible:
+    id: payment-idempotency-key
+    text: ${output.paymentKey}
 - assertVisible:
     id: payment-ledger-count
     text: "1"
 - assertNotVisible: "Cannot connect to Expo CLI"
 - assertNotVisible: "Uncaught.*promise"
-- takeScreenshot: checkout-card-success
+- takeScreenshot: checkout-cold-relaunch
