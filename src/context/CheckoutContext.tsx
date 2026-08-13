@@ -56,6 +56,9 @@ interface CheckoutContextType {
 
 const CheckoutContext = createContext<CheckoutContextType | undefined>(undefined);
 
+const RECONCILE_POLL_INTERVAL_MS = 400;
+const RECONCILE_MAX_POLLS = 26;
+
 export const CheckoutProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -214,12 +217,14 @@ export const CheckoutProvider: React.FC<{ children: React.ReactNode }> = ({
       const stored = attemptRef.current || (await loadSession());
       if (!stored) return;
 
+      attemptRef.current = stored;
+      inFlightRef.current = true;
       setIsRecoveringFromInterruption(true);
       setActiveIdempotencyKey(stored.idempotencyKey);
       setStatus('reconciling');
       setStatusMessage("We don't know yet — checking with the payment API.");
 
-      for (let poll = 0; poll < 8; poll += 1) {
+      for (let poll = 0; poll < RECONCILE_MAX_POLLS; poll += 1) {
         await hydrateLedger();
         setLedgerCount(mockPaymentApi.exportLedger().length);
         const result = await mockPaymentApi.queryPaymentStatus(
@@ -243,17 +248,19 @@ export const CheckoutProvider: React.FC<{ children: React.ReactNode }> = ({
 
         setStatus('reconciling');
         setStatusMessage('Payment is still in flight. Waiting for a terminal result…');
-        if (poll < 7) {
-          await new Promise((resolve) => setTimeout(resolve, 400));
+        if (poll < RECONCILE_MAX_POLLS - 1) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, RECONCILE_POLL_INTERVAL_MS)
+          );
         }
       }
     } catch {
-      inFlightRef.current = false;
-      setStatus('failed');
+      setStatus('reconciling');
       setStatusMessage(
-        'Unable to read durable payment state. No new charge was attempted.'
+        'Unable to reconcile the existing payment safely. No new charge will be attempted; retry will keep using the same idempotency key.'
       );
     } finally {
+      inFlightRef.current = false;
       setIsRecoveringFromInterruption(false);
     }
   }, [applyTerminal, clearSessionWithoutThrow]);

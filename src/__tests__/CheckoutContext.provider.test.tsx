@@ -77,6 +77,7 @@ describe('CheckoutProvider durable-boundary behavior', () => {
       await act(async () => renderer?.unmount());
       renderer = undefined;
     }
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -180,5 +181,158 @@ describe('CheckoutProvider durable-boundary behavior', () => {
 
     expect(processPayment).not.toHaveBeenCalled();
     expect(checkout.status).toBe('cancelled');
+  });
+
+  it('keeps polling the same key through the eight-second slow settlement window', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-13T22:00:00.000Z'));
+    const startedAt = Date.now();
+    const attempt = {
+      idempotencyKey: 'card_slow_relaunch',
+      orderId: 'ord_sf_la_lower_114',
+      status: 'processing' as const,
+      paymentMethod: 'credit_card' as const,
+      amountCents: 9090,
+      paymentMethodToken: 'tok_visa_4242',
+      startedAt: new Date(startedAt).toISOString(),
+    };
+    storage.getItem.mockImplementation(async (key) =>
+      String(key).includes('session') ? JSON.stringify(attempt) : null
+    );
+    const queryPaymentStatus = jest
+      .spyOn(mockPaymentApi, 'queryPaymentStatus')
+      .mockImplementation(async () =>
+        Date.now() - startedAt >= 8000
+          ? {
+              success: true,
+              status: 'captured',
+              transactionId: 'pay_slow_relaunch',
+              idempotencyKey: attempt.idempotencyKey,
+              processedAt: new Date().toISOString(),
+            }
+          : {
+              success: false,
+              status: 'processing',
+              idempotencyKey: attempt.idempotencyKey,
+              processedAt: new Date().toISOString(),
+            }
+      );
+
+    await mountCheckout();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(8200);
+    });
+
+    expect(queryPaymentStatus).toHaveBeenCalledWith(attempt.idempotencyKey);
+    expect(queryPaymentStatus.mock.calls.length).toBeGreaterThan(8);
+    expect(checkout.status).toBe('succeeded');
+    expect(checkout.activeIdempotencyKey).toBe(attempt.idempotencyKey);
+  });
+
+  it('keeps an uncertain recovered payment non-retryable when reconciliation throws', async () => {
+    const attempt = {
+      idempotencyKey: 'card_uncertain_relaunch',
+      orderId: 'ord_sf_la_lower_114',
+      status: 'processing' as const,
+      paymentMethod: 'credit_card' as const,
+      amountCents: 9090,
+      paymentMethodToken: 'tok_visa_4242',
+      startedAt: '2026-08-13T22:00:00.000Z',
+    };
+    storage.getItem.mockImplementation(async (key) =>
+      String(key).includes('session') ? JSON.stringify(attempt) : null
+    );
+    jest
+      .spyOn(mockPaymentApi, 'queryPaymentStatus')
+      .mockRejectedValue(new Error('storage unavailable after capture'));
+    const processPayment = jest.spyOn(mockPaymentApi, 'processPayment');
+
+    await mountCheckout();
+    await act(async () => {
+      for (let pending = 0; pending < 10; pending += 1) {
+        await Promise.resolve();
+      }
+    });
+    expect(checkout.status).toBe('reconciling');
+    expect(checkout.statusMessage).toContain('No new charge');
+    await act(async () => {
+      checkout.updateCardDetails('4242424242424242', '1228', '123');
+    });
+    await act(async () => {
+      await checkout.processCardPayment();
+    });
+
+    expect(checkout.status).toBe('reconciling');
+    expect(checkout.activeIdempotencyKey).toBe(attempt.idempotencyKey);
+    expect(checkout.statusMessage).toContain('No new charge');
+    expect(processPayment).not.toHaveBeenCalled();
+  });
+
+  it('does not expose retry when settlement is captured but ledger persistence fails', async () => {
+    const now = Date.now();
+    const attempt = {
+      idempotencyKey: 'card_captured_storage_gap',
+      orderId: 'ord_sf_la_lower_114',
+      status: 'processing' as const,
+      paymentMethod: 'credit_card' as const,
+      amountCents: 9090,
+      paymentMethodToken: 'tok_visa_4242',
+      startedAt: new Date(now - 10000).toISOString(),
+    };
+    mockPaymentApi.hydrate([
+      {
+        key: attempt.idempotencyKey,
+        record: {
+          fingerprint: `${attempt.orderId}|${attempt.paymentMethod}|${attempt.amountCents}|${attempt.paymentMethodToken}`,
+          response: {
+            success: false,
+            status: 'processing',
+            idempotencyKey: attempt.idempotencyKey,
+            processedAt: attempt.startedAt,
+          },
+          request: {
+            idempotencyKey: attempt.idempotencyKey,
+            orderId: attempt.orderId,
+            paymentMethod: attempt.paymentMethod,
+            amountCents: attempt.amountCents,
+            currency: 'usd',
+            paymentMethodToken: attempt.paymentMethodToken,
+            simulateFailureMode: 'none',
+            simulateSlowNetwork: true,
+          },
+          settleAtMs: now - 1,
+        },
+      },
+    ]);
+    const storedLedger = JSON.stringify(mockPaymentApi.exportLedger());
+    storage.getItem.mockImplementation(async (key) => {
+      if (String(key).includes('session')) return JSON.stringify(attempt);
+      if (String(key).includes('ledger')) return storedLedger;
+      return null;
+    });
+    storage.setItem.mockRejectedValueOnce(new Error('disk full after capture'));
+    const processPayment = jest.spyOn(mockPaymentApi, 'processPayment');
+
+    await mountCheckout();
+    await act(async () => {
+      for (let pending = 0; pending < 10; pending += 1) {
+        await Promise.resolve();
+      }
+    });
+    expect(checkout.status).toBe('reconciling');
+    expect(checkout.statusMessage).toContain('No new charge');
+    await act(async () => {
+      checkout.updateCardDetails('4242424242424242', '1228', '123');
+    });
+    await act(async () => {
+      await checkout.processCardPayment();
+    });
+
+    expect(checkout.status).toBe('reconciling');
+    expect(checkout.activeIdempotencyKey).toBe(attempt.idempotencyKey);
+    expect(checkout.statusMessage).toContain('No new charge');
+    expect(checkout.ledgerCount).toBe(1);
+    expect(processPayment).not.toHaveBeenCalled();
+    expect(storage.removeItem).not.toHaveBeenCalled();
   });
 });
