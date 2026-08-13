@@ -12,7 +12,7 @@ A fan has already picked seats. This screen decides **which payment methods they
   <img src="evidence/google-pay-success.png" alt="Google Pay stub payment confirmed on a physical Samsung device" width="30%" />
 </p>
 
-Verified on **2026-08-13 (Thursday, America/New_York)** with a physical Samsung Galaxy S25 (`SM-S931U1`, Android 16). The serialized Maestro suite passed all five flows in 4m23s: Affirm threshold, card success, issuer decline/retry, Google Pay cancel/success, and force-stop/relaunch recovery with the same idempotency key and one ledger row. The non-device acceptance gate also passed **9/9 Jest suites (76/76 tests)**, TypeScript, ESLint, Expo dependency pins, and `git diff --check`.
+Verified on **2026-08-13 (Thursday, America/New_York)** with a physical Samsung Galaxy S25 (`SM-S931U1`, Android 16). The serialized Maestro suite passed all five flows in 4m23s: Affirm threshold, card success, issuer decline/retry, Google Pay cancel/success, and force-stop/relaunch recovery with the same idempotency key and one ledger row. The post-rebase acceptance gate also passed **9/9 Jest suites (80/80 tests)**, TypeScript, ESLint, Expo dependency pins, and `git diff --check`.
 
 Deadline context: assignment email received **2026-08-12 (Wednesday)**; submit by **2026-08-17**.
 
@@ -152,7 +152,7 @@ See [AI_USAGE.md](./AI_USAGE.md). Gametime asked for where/why AI was used and h
 npm test          # Jest: domain + CheckoutController e2e + testID contract
 npm run test:e2e  # controller integration + instrumentation contract
 npm run test:maestro   # five real-device flows; Metro uses localhost:8082
-npm run test:acceptance # 76 Jest tests + TypeScript + lint + Expo version pins
+npm run test:acceptance # 80 Jest tests + TypeScript + lint + Expo version pins
 ```
 
 TDD: `cart.test.ts` and `checkoutController.e2e.test.ts` were written first (they failed on missing modules), then `CheckoutController` / `cart` / `MemoryKv` were implemented until green.

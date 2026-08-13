@@ -76,7 +76,11 @@ export const DevSimulatorDrawer: React.FC = () => {
                 {(['auto', 'ios', 'android'] as const).map((plat) => (
                   <TouchableOpacity
                     key={plat}
-                    testID={`review-lab-platform-${plat}`}
+                    testID={
+                      plat === 'android'
+                        ? TEST_IDS.reviewLabAndroid
+                        : `review-lab-platform-${plat}`
+                    }
                     style={[
                       styles.toggleBtn,
                       override.forcePlatform === plat && styles.toggleBtnActive,
@@ -144,7 +148,13 @@ export const DevSimulatorDrawer: React.FC = () => {
               ).map((mode) => (
                 <TouchableOpacity
                   key={mode.id}
-                  testID={`review-lab-failure-${mode.id}`}
+                  testID={
+                    mode.id === 'declined'
+                      ? TEST_IDS.reviewLabDecline
+                      : mode.id === 'network_error'
+                        ? TEST_IDS.reviewLabNetworkError
+                        : `review-lab-failure-${mode.id}`
+                  }
                   style={[
                     styles.failModeBtn,
                     override.forceFailureMode === mode.id && styles.failModeBtnActive,
