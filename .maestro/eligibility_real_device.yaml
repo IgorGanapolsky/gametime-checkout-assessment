@@ -1,0 +1,36 @@
+appId: com.igorganapolsky.gametimemobilecheckout
+name: Eligibility rules on physical Android device
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "checkout-screen"
+    timeout: 60000
+- tapOn:
+    id: "review-lab-open"
+- scrollUntilVisible:
+    element:
+      id: "review-lab-reset"
+    direction: DOWN
+- tapOn:
+    id: "review-lab-reset"
+- tapOn:
+    id: "review-lab-qty-1"
+- tapOn:
+    id: "review-lab-close"
+- assertVisible:
+    id: "order-total"
+- assertVisible:
+    id: "express-google-pay"
+- assertNotVisible:
+    id: "express-apple-pay"
+- assertNotVisible:
+    id: "express-affirm"
+- tapOn:
+    id: "order-qty-inc"
+- assertVisible:
+    id: "express-affirm"
+- tapOn:
+    id: "order-qty-dec"
+- assertNotVisible:
+    id: "express-affirm"

@@ -43,3 +43,8 @@ example
 /android
 
 graphify-out/
+
+# Local device verification receipts
+evidence/maestro/*.log
+evidence/maestro/*.xml
+evidence/maestro/*.exit

@@ -17,6 +17,13 @@ export const TEST_IDS = {
   sheetPay: 'express-sheet-pay',
   sheetCancel: 'express-sheet-cancel',
   reviewLabOpen: 'review-lab-open',
+  reviewLabClose: 'review-lab-close',
+  reviewLabAppleWallet: 'review-lab-apple-wallet',
+  reviewLabGooglePay: 'review-lab-google-pay',
+  reviewLabQty1: 'review-lab-qty-1',
+  reviewLabQty2: 'review-lab-qty-2',
+  reviewLabKillRelaunch: 'review-lab-kill-relaunch',
+  reviewLabReset: 'review-lab-reset',
   statusTitle: 'payment-status-title',
   statusDone: 'payment-status-done',
 } as const;

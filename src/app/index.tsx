@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, ScrollView, View, Text, SafeAreaView } from 'react-native';
+import { StyleSheet, ScrollView, View, Text } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { OrderSummary } from '../components/OrderSummary';
 import { ExpressCheckout } from '../components/ExpressCheckout';
 import { CreditCardForm } from '../components/CreditCardForm';

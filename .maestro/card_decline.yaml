@@ -1,0 +1,48 @@
+appId: com.igorganapolsky.gametimemobilecheckout
+name: Card decline recovery on physical Android device
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "checkout-screen"
+    timeout: 60000
+- tapOn:
+    id: "review-lab-open"
+- scrollUntilVisible:
+    element:
+      id: "review-lab-reset"
+    direction: DOWN
+- tapOn:
+    id: "review-lab-reset"
+- tapOn:
+    id: "review-lab-close"
+- tapOn:
+    id: "input-card-number"
+- inputText: "4000000000000002"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "input-card-expiry"
+    direction: DOWN
+- tapOn:
+    id: "input-card-expiry"
+- inputText: "1228"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "input-card-cvc"
+    direction: DOWN
+- tapOn:
+    id: "input-card-cvc"
+- inputText: "123"
+- hideKeyboard
+- tapOn:
+    id: "card-submit"
+- extendedWaitUntil:
+    visible:
+      text: "Payment failed"
+    timeout: 20000
+- assertVisible: "Try a different method"
+- tapOn: "Try a different method"
+- assertVisible:
+    id: "checkout-screen"

@@ -51,14 +51,14 @@ export class MockPaymentBackend {
     this.queryLatencyMs = opts.queryLatencyMs ?? 0;
   }
 
-  hydrate(records: Array<{ key: string; record: LedgerRecord }>): void {
+  hydrate(records: { key: string; record: LedgerRecord }[]): void {
     this.ledger.clear();
     for (const { key, record } of records) {
       this.ledger.set(key, record);
     }
   }
 
-  exportLedger(): Array<{ key: string; record: LedgerRecord }> {
+  exportLedger(): { key: string; record: LedgerRecord }[] {
     return Array.from(this.ledger.entries()).map(([key, record]) => ({
       key,
       record,

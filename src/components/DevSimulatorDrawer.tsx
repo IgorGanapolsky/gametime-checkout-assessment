@@ -53,7 +53,7 @@ export const DevSimulatorDrawer: React.FC = () => {
           <View style={styles.drawerContainer}>
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Review Lab</Text>
-              <TouchableOpacity onPress={() => setDevDrawerOpen(false)}>
+              <TouchableOpacity testID={TEST_IDS.reviewLabClose} onPress={() => setDevDrawerOpen(false)}>
                 <Text style={styles.closeText}>Close</Text>
               </TouchableOpacity>
             </View>
@@ -73,6 +73,7 @@ export const DevSimulatorDrawer: React.FC = () => {
                 {(['auto', 'ios', 'android'] as const).map((plat) => (
                   <TouchableOpacity
                     key={plat}
+                    testID={`review-lab-platform-${plat}`}
                     style={[
                       styles.toggleBtn,
                       override.forcePlatform === plat && styles.toggleBtnActive,
@@ -93,6 +94,7 @@ export const DevSimulatorDrawer: React.FC = () => {
 
               <Text style={styles.sectionTitle}>WALLET CAPABILITY</Text>
               <TouchableOpacity
+                testID={TEST_IDS.reviewLabAppleWallet}
                 style={styles.failModeBtn}
                 onPress={() => cycleWallet('forceApplePayProvisioned')}
               >
@@ -101,6 +103,7 @@ export const DevSimulatorDrawer: React.FC = () => {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
+                testID={TEST_IDS.reviewLabGooglePay}
                 style={styles.failModeBtn}
                 onPress={() => cycleWallet('forceGooglePaySetup')}
               >
@@ -113,12 +116,14 @@ export const DevSimulatorDrawer: React.FC = () => {
               <View style={styles.buttonRow}>
                 <TouchableOpacity
                   style={[styles.toggleBtn, cart.items[0].quantity === 1 && styles.toggleBtnActive]}
+                  testID={TEST_IDS.reviewLabQty1}
                   onPress={() => setQuantity(1)}
                 >
                   <Text style={styles.toggleBtnText}>Qty 1 (~$90)</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.toggleBtn, cart.items[0].quantity >= 2 && styles.toggleBtnActive]}
+                  testID={TEST_IDS.reviewLabQty2}
                   onPress={() => setQuantity(2)}
                 >
                   <Text style={styles.toggleBtnText}>Qty 2 (~$178)</Text>
@@ -136,6 +141,7 @@ export const DevSimulatorDrawer: React.FC = () => {
               ).map((mode) => (
                 <TouchableOpacity
                   key={mode.id}
+                  testID={`review-lab-fail-${mode.id}`}
                   style={[
                     styles.failModeBtn,
                     override.forceFailureMode === mode.id && styles.failModeBtnActive,
@@ -162,6 +168,7 @@ export const DevSimulatorDrawer: React.FC = () => {
               </View>
 
               <TouchableOpacity
+                testID={TEST_IDS.reviewLabKillRelaunch}
                 style={styles.actionBtn}
                 onPress={async () => {
                   setDevDrawerOpen(false);
@@ -172,6 +179,7 @@ export const DevSimulatorDrawer: React.FC = () => {
               </TouchableOpacity>
 
               <TouchableOpacity
+                testID={TEST_IDS.reviewLabReset}
                 style={[styles.actionBtn, { backgroundColor: '#334155' }]}
                 onPress={async () => {
                   await resetCheckout();
